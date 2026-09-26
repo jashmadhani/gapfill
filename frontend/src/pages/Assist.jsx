@@ -4,6 +4,8 @@ import { Bot, Send } from 'lucide-react'
 import { api } from '../api'
 import { useTour } from '../store'
 import { Button, Empty, Spinner, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 
 const SUGGEST = {
   plan: ['Show day 2', 'Add a cooking class', 'Cheaper hotel', 'How much is it?'],
@@ -40,20 +42,15 @@ export default function Assist() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-5rem)] flex-col">
-      <header className="flex items-center gap-3 px-4 pt-5 pb-3">
-        <div className="grid h-10 w-10 place-items-center rounded-full bg-rani-600 text-white"><Bot size={20} /></div>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Trip assistant</h1>
-          <p className="text-xs text-stone-500">{busy ? 'thinking…' : `Knows your whole plan · ${state.assistant === 'anthropic' ? 'AI' : 'smart rules'} mode`}</p>
-        </div>
-      </header>
-      <div className="flex-1 space-y-2 px-4">
+    <div className="flex min-h-[calc(100dvh-5rem)] flex-col">
+      <PageHero size="sm" img={destImage(tour.route[0]?.dest)} eyebrow={busy ? 'Thinking…' : 'Knows your whole plan'} title="Trip assistant" />
+      <PageBody width="narrow" className="flex-1">
+      <div className="flex-1 space-y-2.5">
         {msgs === null && <Spinner />}
         {msgs?.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-stone-600 ring-1 ring-stone-200">Hi! Ask me about your schedule, costs, or tell me what to change, I’ll update the plan and the bookings.</p>}
         {msgs?.map((m) => (
           <div key={m.id} className={cx('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
-            <div className={cx('max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-[14px] leading-snug shadow-sm',
+            <div className={cx('max-w-[85%] whitespace-pre-line rounded-[1.3rem] px-4 py-2.5 text-[16px] leading-snug shadow-soft',
               m.role === 'user' ? 'rounded-br-md bg-rani-600 text-white' : 'rounded-bl-md bg-white text-stone-800 ring-1 ring-stone-200')}>
               {m.text}
             </div>
@@ -62,18 +59,19 @@ export default function Assist() {
         {busy && <div className="flex"><div className="rounded-2xl rounded-bl-md bg-white px-3 py-2 text-stone-400 ring-1 ring-stone-200">•••</div></div>}
         <div ref={end} />
       </div>
-      <div className="sticky bottom-16 bg-sand-50/95 px-4 pb-3 pt-2 backdrop-blur">
+      </PageBody>
+      <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 bg-sand-50/95 px-5 pb-3 pt-2 backdrop-blur lg:bottom-0"><div className="mx-auto max-w-3xl">
         <div className="mb-2 flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
           {(SUGGEST[tour.stage] || SUGGEST.plan).map((q) => (
-            <button key={q} onClick={() => send(q)} className="shrink-0 rounded-full bg-white px-3 py-1.5 text-xs text-stone-700 ring-1 ring-stone-200 hover:ring-rani-500">{q}</button>
+            <button key={q} onClick={() => send(q)} className="min-h-10 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-stone-700 ring-1 ring-stone-200 hover:ring-rani-500">{q}</button>
           ))}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); send() }} className="flex gap-2">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask or tell me what to change…"
-            className="flex-1 rounded-xl bg-white px-4 py-3 text-sm ring-1 ring-stone-200 focus:outline-none focus:ring-2 focus:ring-rani-500" />
+            className="min-h-12 flex-1 rounded-full bg-white px-5 text-[16px] ring-1 ring-stone-200 focus:outline-none focus:ring-2 focus:ring-rani-500" />
           <Button type="submit" disabled={busy} aria-label="Send"><Send size={16} /></Button>
         </form>
-      </div>
+      </div></div>
     </div>
   )
 }

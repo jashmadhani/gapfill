@@ -77,7 +77,7 @@ function Candidate({ tour, dest, c, editable, onChanged, onReplace }) {
         <Photo src={destImage(dest)} scrim={false} className="hidden h-16 w-16 shrink-0 rounded-2xl sm:block" />
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <Link to={`/experience/${c.offering.id}`} className="font-semibold leading-snug hover:underline">{c.offering.title}</Link>
+            <Link to={`/experience/${c.offering.id}`} className="inline-flex min-h-11 items-center font-semibold leading-snug hover:underline">{c.offering.title}</Link>
             <FitBadge fit={c.fit} label="fit" className="shrink-0" />
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 text-xs text-stone-500">

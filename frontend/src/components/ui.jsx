@@ -72,7 +72,7 @@ export function Button({ variant = 'primary', className, ...p }) {
   }
   return (
     <button
-      className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
+      className={cx('btn-label inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
       {...p}
     />
   )
@@ -173,7 +173,7 @@ export function JourneyStrip({ stage, day, days, hideAction = false }) {
   const [label, action, to] = NEXT_STEP[stage] || ['Discover', 'Design your tour', '/personalize']
   const pct = Math.round(((at + 1) / JOURNEY.length) * 100)
   return (
-    <div className="flex items-center gap-3 px-4 md:px-6">
+    <div className="flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2 text-sm">
           <span className="truncate font-semibold text-stone-900">{label}{day ? ` · day ${day} of ${days}` : ''}</span>

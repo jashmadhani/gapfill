@@ -4,6 +4,8 @@ import { ArrowLeft, Check, Clock, TriangleAlert } from 'lucide-react'
 import { api, inr, signedInr } from '../api'
 import { useTour } from '../store'
 import { Button, Card, Chip, IOBadge, KindIcon, MODE, Rating, Spinner, TIER_LABEL, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 import { FitBadge, FitChips } from '../components/group'
 
 // Compare alternatives for one component (activity / hotel / transfer) and swap in one tap.
@@ -33,10 +35,10 @@ export default function Compare() {
   }
 
   return (
-    <div className="px-4 pt-4">
-      <button onClick={() => nav(-1)} className="mb-3 inline-flex items-center gap-1 text-sm text-stone-500"><ArrowLeft size={16} /> Back</button>
-      <div className="text-xs font-semibold uppercase tracking-wider text-rani-600">Compare alternatives · Day {it.day}</div>
-      <h1 className="mt-1 text-2xl font-bold tracking-tight">{it.kind === 'hotel' ? `Stay in ${it.dest_name}` : it.kind === 'transport' ? `${it.from_name} → ${it.dest_name}` : 'Swap this experience'}</h1>
+    <div>
+      <PageHero size="sm" back img={destImage(it.dest_key)} eyebrow={`Compare alternatives · Day ${it.day}`}
+        title={it.kind === 'hotel' ? `Stay in ${it.dest_name}` : it.kind === 'transport' ? `${it.from_name} to ${it.dest_name}` : 'Swap this experience'} />
+      <PageBody width="narrow">
 
       <Card className="mt-3 p-3 ring-2 ring-stone-300">
         <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Current</div>
@@ -92,6 +94,7 @@ export default function Compare() {
           </Button>
         </div>
       )}
+      </PageBody>
     </div>
   )
 }

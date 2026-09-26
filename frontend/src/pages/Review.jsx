@@ -4,6 +4,8 @@ import { Star } from 'lucide-react'
 import { api } from '../api'
 import { useTour } from '../store'
 import { Button, Card, Empty, JourneyStrip, Spinner, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 
 function Stars({ value, onChange, size = 22 }) {
   return (
@@ -30,7 +32,7 @@ export default function Review() {
   if (tour.stage !== 'complete') {
     return (
       <div className="px-4 pt-5">
-        <Empty title={tour.stage === 'review' ? 'Already reviewed, thank you!' : 'Reviews open after your tour'} action={<Link to="/trip"><Button variant="secondary">Back to trip</Button></Link>}>
+        <Empty title={tour.stage === 'review' ? 'Already reviewed, thank you!' : 'Reviews open after your tour'} action={<Link to="/trip" className="inline-block"><Button variant="secondary">Back to trip</Button></Link>}>
           {tour.stage === 'review' ? `You rated it ${tour.review?.overall}/5.` : 'We’ll ask for your feedback on the last day.'}
         </Empty>
       </div>
@@ -48,10 +50,8 @@ export default function Review() {
   }
   return (
     <div>
-      <header className="px-4 pt-5 pb-3">
-        <h1 className="text-2xl font-bold tracking-tight">How was {tour.title}?</h1>
-        <p className="text-sm text-stone-500">Your ratings go straight to our local partners.</p>
-      </header>
+      <PageHero size="sm" img={destImage(tour.route[0]?.dest)} eyebrow="Your review" title={`How was ${tour.title}?`} subtitle="Your ratings go straight to our local partners." />
+      <PageBody width="narrow">
       <JourneyStrip stage="complete" hideAction />
       <section className="space-y-3 px-4 pt-4">
         <Card className="p-4 text-center">
@@ -72,6 +72,7 @@ export default function Review() {
         </Card>
         <Button className={cx('w-full')} disabled={busy} onClick={submit}>{busy ? 'Sending…' : 'Submit review'}</Button>
       </section>
+      </PageBody>
     </div>
   )
 }

@@ -4,6 +4,8 @@ import { LayoutDashboard, MonitorPlay, Store } from 'lucide-react'
 import { api, fmtDate } from '../api'
 import { useTour } from '../store'
 import { Card, Chip, STAGE_CHIP, Spinner, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 
 // Demo switcher: view the traveler app as any customer, or jump to the operator / vendor surfaces.
 export default function Tours() {
@@ -13,13 +15,13 @@ export default function Tours() {
   useEffect(() => { api.tours().then(setTours) }, [])
   const open = async (t) => { await activate(t.id); nav(t.stage === 'plan' ? '/plan' : t.stage === 'complete' ? '/review' : '/trip') }
   return (
-    <div className="px-4 pt-5">
-      <h1 className="text-2xl font-bold tracking-tight">Tours</h1>
-      <p className="text-sm text-stone-500">Open the traveler app as any customer, each tour is at a different lifecycle stage.</p>
+    <div>
+      <PageHero size="sm" img={destImage('jaisalmer')} eyebrow="Switch traveler" title="All trips" subtitle="Open the app as any traveler. Each trip is at a different stage." />
+      <PageBody width="narrow">
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-        <Link to="/operator" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><LayoutDashboard size={14} /> Operator</Link>
-        <Link to="/vendor/1" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><Store size={14} /> Vendor</Link>
-        <Link to="/ops" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><MonitorPlay size={14} /> Live Ops</Link>
+        <Link to="/operator" className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl bg-white p-2 text-sm font-semibold ring-1 ring-stone-200"><LayoutDashboard size={14} /> Operator</Link>
+        <Link to="/vendor/1" className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl bg-white p-2 text-sm font-semibold ring-1 ring-stone-200"><Store size={14} /> Vendor</Link>
+        <Link to="/ops" className="flex min-h-11 items-center justify-center gap-1.5 rounded-2xl bg-white p-2 text-sm font-semibold ring-1 ring-stone-200"><MonitorPlay size={14} /> Live Ops</Link>
       </div>
       {!tours ? <Spinner /> : (
         <div className="mt-4 space-y-2">
@@ -40,6 +42,7 @@ export default function Tours() {
           })}
         </div>
       )}
+      </PageBody>
     </div>
   )
 }
