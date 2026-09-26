@@ -18,6 +18,7 @@ export const api = {
   setClock: (body) => req('POST', '/demo/clock', body),
   discover: (interests = []) => req('GET', `/discover?interests=${interests.join(',')}`),
   destination: (key) => req('GET', `/destinations/${key}`),
+  roads: (pts) => req('GET', `/roads?pts=${pts.map(([x, y]) => `${x.toFixed(5)},${y.toFixed(5)}`).join(';')}`),
   offering: (id) => req('GET', `/offerings/${id}`),
   plan: (body) => req('POST', '/tours/plan', body),
   tours: () => req('GET', '/tours'),

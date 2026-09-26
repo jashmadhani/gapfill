@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import roads as R
 from . import assist, customize
 from . import planner as P
 from .adapt import resolve_event, run_trigger
@@ -242,6 +243,18 @@ async def discover(interests: str = "", db: AsyncSession = Depends(get_db)):
     return {"interests": ints, "destinations": P.recommend_destinations(ints),
             "experiences": [ser_offering(o, brief=True) | {"reason": P.fit_reason(o, {"interests": ints})}
                             for o in P.recommend_experiences(ints, limit=12)]}
+
+
+@app.get("/roads")
+async def roads(pts: str):
+    """Real road geometry for a path. pts = "lng,lat;lng,lat;..." (max 12 points)."""
+    try:
+        points = [[float(x) for x in p.split(",")] for p in pts.split(";") if p]
+    except ValueError:
+        raise HTTPException(400, "pts must be lng,lat;lng,lat;...")
+    if not 2 <= len(points) <= 12:
+        raise HTTPException(400, "Between 2 and 12 points")
+    return {"legs": await R.legs(points)}
 
 
 @app.get("/destinations/{key}")

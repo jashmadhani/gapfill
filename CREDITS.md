@@ -12,5 +12,9 @@ Destination photos are loaded from Wikimedia Commons under the licences below.
 | Jodhpur | 20191210_View_from_Mehrangarh_Fort,_Jodhpur,_0950_7795.jpg | CC BY-SA 4.0 |
 | Jaisalmer | Camels_at_Sam_sand_dunes,_Jaisalmer_(44753465845).jpg | CC BY-SA 2.0 |
 | Udaipur | 20191207_Lake_Pichola,_City_Palace,_Udaipur,_1516_7254.jpg | CC BY-SA 4.0 |
+| Bikaner | 20191211_Junagarh_Fort,_Bikaner,_India_1547_8077_DxO.jpg | CC BY-SA 4.0 |
+| Chittorgarh | Vijay_Stambh_Chittorgarh_Fort_03.jpg | CC BY-SA 4.0 |
+| Mount Abu | Nakki_Lake,_Mount_Abu,_Rajasthan,_610.jpg | CC BY-SA 3.0 |
+| Bundi | Bundi-Taragarh_fort-Garh_Palace-20131016.jpg | CC BY-SA 3.0 |
 
 Each file is at `https://commons.wikimedia.org/wiki/File:<file name>`, where you can find the author.

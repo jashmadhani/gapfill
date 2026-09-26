@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 
 from . import planner as P
-from .catalog import (ACTIVITIES, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, REVIEW_SNIPPETS, TIER_AMENITIES,
+from .catalog import (ACT_COORDS, ACTIVITIES, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, REVIEW_SNIPPETS, TIER_AMENITIES,
                       TRANSPORT)
 from .db import Base, SessionLocal, engine
 from .models import (AppState, ChatMessage, Coordinator, Customer, Destination, Offering, Payment, Review, Task, Tour,
@@ -29,6 +29,11 @@ TOURS = [
     (6, "Blue & Gold Road Trip", -25, 6, {"destinations": ["jodhpur", "jaisalmer"], "start_city": "jodhpur", "adults": 4, "children": 0,
      "budget": 125000, "hotel_tier": "budget", "transport": "car", "interests": ["adventure", "nightlife", "photography"], "pace": "packed"}, "reviewed"),
 ]
+
+
+from .catalog_extra import EXTRA_TOURS  # noqa: E402
+
+TOURS += EXTRA_TOURS
 
 
 def _jitter(i: int):
@@ -59,9 +64,10 @@ async def reset_and_seed(today: date | None = None) -> dict:
         for idx, (dest, title, tags, dur, price, op, cl, io, rating, cnt, kids, step, closed, vname, desc) in enumerate(ACTIVITIES):
             v = await vendor(vname, "activity", dest)
             dlat, dlng = _jitter(idx)
+            lat, lng = ACT_COORDS.get(title, (DESTINATIONS[dest][4] + dlat, DESTINATIONS[dest][5] + dlng))
             o = Offering(vendor_id=v.id, kind="activity", dest_key=dest, title=title, description=desc, tags=tags, duration_min=dur,
                          price=price, open=op, close=cl, indoor_outdoor=io, rating=rating, rating_count=cnt, kid_friendly=kids,
-                         step_free=step, closed_weekdays=closed, lat=DESTINATIONS[dest][4] + dlat, lng=DESTINATIONS[dest][5] + dlng,
+                         step_free=step, closed_weekdays=closed, lat=lat, lng=lng,
                          capacity=12 + idx % 10)
             db.add(o)
             await db.flush()

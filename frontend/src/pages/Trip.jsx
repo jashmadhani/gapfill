@@ -1,13 +1,16 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  BellRing, CalendarClock, Check, CircleCheck, Clock, CloudRain, IndianRupee, MapPin, MessageCircle, Phone, Sparkles, Star, Ticket,
+  ArrowLeftRight, ArrowRight, ArrowUpRight, BellRing, Check, Navigation, CircleCheck, Clock, CloudRain, IndianRupee, MapPin, MessageCircle, Phone, Sparkles, Star, Ticket,
 } from 'lucide-react'
 import { api, fmtDate, fmtTime, inr } from '../api'
 import { useTour } from '../store'
 import DayTimeline, { VENDOR_CHIP } from '../components/DayTimeline'
 import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Sheet, Spinner, cx } from '../components/ui'
 import { destImage } from '../media'
+import { buildTripMap } from '../lib/tripMap'
+
+const RouteMap = lazy(() => import('../components/RouteMap'))
 
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m }
 const live = (i) => !['replaced', 'cancelled'].includes(i.status) && i.kind !== 'fee'
@@ -15,14 +18,15 @@ const live = (i) => !['replaced', 'cancelled'].includes(i.status) && i.kind !== 
 function Coordinator({ c }) {
   if (!c) return null
   return (
-    <Card className="flex items-center justify-between p-3">
-      <div>
-        <div className="text-xs text-stone-500">Your tour coordinator</div>
-        <div className="font-semibold">{c.name}</div>
-        <div className="text-xs text-stone-500">{c.phone} · {c.languages.join(', ')}</div>
-      </div>
-      <a href={`tel:${c.phone}`} className="grid h-10 w-10 place-items-center rounded-full bg-emerald-600 text-white" aria-label="Call"><Phone size={18} /></a>
-    </Card>
+    <div className="flex items-center gap-4 rounded-[1.75rem] bg-white p-3 pr-4 shadow-soft">
+      <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-rani-50 font-display text-xl font-bold text-rani-700">{c.name.split(' ').map((w) => w[0]).join('').slice(0, 2)}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-stone-500">Your coordinator</span>
+        <span className="block truncate text-lg font-bold text-ink">{c.name}</span>
+        <span className="block truncate text-sm text-stone-600">{c.languages.join(' · ')}</span>
+      </span>
+      <a href={`tel:${c.phone}`} className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-green-600 text-white" aria-label={`Call ${c.name}`}><Phone size={22} /></a>
+    </div>
   )
 }
 
@@ -103,22 +107,23 @@ function ReportChange({ tour, today, fire, busy }) {
 function Changes({ tour }) {
   if (!tour.changes.length) return null
   return (
-    <Card className="p-3">
-      <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Plan changes</div>
-      <ul className="mt-2 space-y-1.5 text-xs">
-        {tour.changes.slice(0, 5).map((c) => (
-          <li key={c.id} className="flex items-start justify-between gap-2">
-            <span className="text-stone-600"><b className="text-stone-800">{c.label}</b> · {c.status === 'accepted' ? `applied “${c.chosen_label}”` : c.status === 'pending' ? 'waiting for you' : 'kept original'}{c.resolved_by && c.resolved_by !== 'traveler' ? ` by ${c.resolved_by}` : ''}</span>
+    <details className="rounded-[1.75rem] bg-white p-4 shadow-soft">
+      <summary className="flex min-h-11 cursor-pointer items-center justify-between text-lg font-bold text-ink">Plan changes <span className="rounded-full bg-stone-100 px-3 py-1 text-sm">{tour.changes.length}</span></summary>
+      <ul className="mt-2 space-y-2">
+        {tour.changes.slice(0, 6).map((c) => (
+          <li key={c.id} className="flex items-start justify-between gap-3 text-[15px]">
+            <span className="text-stone-700"><b className="text-ink">{c.label}</b> · {c.status === 'accepted' ? `applied “${c.chosen_label}”` : c.status === 'pending' ? 'waiting for you' : 'kept original'}</span>
             <Chip tone={c.status === 'accepted' ? 'green' : c.status === 'pending' ? 'rani' : 'stone'}>{c.status}</Chip>
           </li>
         ))}
       </ul>
-    </Card>
+    </details>
   )
 }
 
 function Operate({ tour, state, onFix }) {
-  const { notify } = useTour()
+  const { notify, events } = useTour()
+  const [sel, setSel] = useState(null)
   const [busy, setBusy] = useState(false)
   const today = tour.days_detail[tour.current_day - 1]
   const now = toMin(state.demo_time)
@@ -135,90 +140,144 @@ function Operate({ tour, state, onFix }) {
       if (!r.events.length) notify(r.note || fallback)
     } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
   }
+  const cities = Object.fromEntries((state.destinations || []).map((d) => [d.key, d]))
+  const model = buildTripMap({ tour, state, cities, events })
+  const selAct = sel?.type === 'activity' ? model.today.find((a) => a.id === sel.id) : null
   return (
     <>
       {hero ? (
-        <Card className="overflow-hidden">
-          <Photo src={destImage(hero.dest_key || hero.dest_name)} alt={hero.dest_name}>
-            <div className="flex min-h-48 flex-col justify-end px-4 pt-4 pb-4 text-white">
-              <span className="glass-dark inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"><Sparkles size={13} aria-hidden /> {current ? 'Happening now' : 'Up next'}</span>
-              <h2 className="font-display mt-2 flex items-start gap-2 text-2xl leading-tight"><KindIcon item={hero} size={20} className="mt-1 shrink-0" /> {hero.title}</h2>
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/85">
-                <span className="inline-flex items-center gap-1"><Clock size={14} aria-hidden /> {hero.start_label} – {hero.end_label}</span>
-                <span className="inline-flex items-center gap-1"><MapPin size={14} aria-hidden /> {hero.dest_name}</span>
+        <Link to={hero.kind === 'activity' && hero.offering_id ? `/experience/${hero.offering_id}` : '#timeline'} className="block">
+          <Photo src={destImage(hero.dest_key || hero.dest_name)} alt={hero.dest_name} scrim="both" className="rounded-[2.25rem] shadow-float">
+            <div className="flex min-h-[18rem] flex-col justify-between p-5 text-white">
+              <div className="flex items-center justify-between">
+                <span className={cx('rounded-full px-3 py-1.5 text-sm font-bold', current ? 'bg-white text-ink' : 'glass text-ink')}>{current ? 'Happening now' : `In ${Math.max(0, hero.start_min - now)} min`}</span>
+                {hero.booking_ref && <span className="glass-dark inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-sm"><Ticket size={14} aria-hidden /> {hero.booking_ref}</span>}
+              </div>
+              <div>
+                <p className="font-display text-3xl font-bold">{hero.start_label.replace(/ (AM|PM)/, '')}<span className="ml-1 text-base">{hero.start_label.slice(-2)}</span></p>
+                <h2 className="mt-1 text-[1.75rem] font-bold leading-tight">{hero.title}</h2>
+                <p className="mt-1 text-[15px] text-white/85">{hero.vendor_name}</p>
               </div>
             </div>
           </Photo>
-          <div className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              {hero.booking_ref && <span className="inline-flex items-center gap-1 rounded-md bg-stone-900 px-2 py-0.5 font-mono text-xs text-white"><Ticket size={12} /> {hero.booking_ref}</span>}
-              {VENDOR_CHIP[hero.vendor_status]}
-              <span className="text-xs text-stone-500">{hero.vendor_name}</span>
-            </div>
-            {!current && <p className="text-sm text-stone-600">Starts in {Math.max(0, hero.start_min - now)} min{hero.kind === 'activity' ? ` · ${hero.offering?.duration_min} min experience` : ''}.</p>}
-            <div className="grid grid-cols-2 gap-2">
-              <Link to={`/compare/${hero.id}`}><Button variant="secondary" className="w-full">Swap</Button></Link>
-              <Link to="/assist"><Button variant="secondary" className="w-full"><MessageCircle size={15} /> Ask</Button></Link>
-            </div>
-          </div>
-        </Card>
-      ) : <Empty title="You're done for today">Rest up — tomorrow is ready below.</Empty>}
+        </Link>
+      ) : <Empty title="You’re done for today">Rest up — tomorrow is ready below.</Empty>}
+
+      {hero && (
+        <div className="grid grid-cols-3 gap-2">
+          <Link to={`/compare/${hero.id}`} className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-3xl bg-white text-sm font-bold text-ink shadow-soft"><ArrowLeftRight size={20} aria-hidden /> Swap</Link>
+          <Link to="/assist" className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-3xl bg-white text-sm font-bold text-ink shadow-soft"><MessageCircle size={20} aria-hidden /> Ask</Link>
+          <a href={hero.offering?.lat ? `https://www.google.com/maps/dir/?api=1&destination=${hero.offering.lat},${hero.offering.lng}` : '#'} target="_blank" rel="noreferrer"
+            className="flex min-h-16 flex-col items-center justify-center gap-1 rounded-3xl bg-white text-sm font-bold text-ink shadow-soft"><Navigation size={20} aria-hidden /> Directions</a>
+        </div>
+      )}
 
       <Risks tour={tour} onFix={onFix} />
 
+      <section aria-labelledby="today-map">
+        <h2 id="today-map" className="mb-3 text-2xl font-bold text-ink">Today’s route</h2>
+        <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
+          <Suspense fallback={<div className="h-72 animate-pulse bg-stone-200" />}>
+            <RouteMap model={model} initialMode={model.today.length ? 'today' : 'route'} selected={sel} onSelect={setSel} className="h-72" />
+          </Suspense>
+          {selAct && (
+            <Link to={selAct.item.offering_id ? `/experience/${selAct.item.offering_id}` : '#timeline'} className="animate-fade flex items-center gap-4 p-3 pr-5">
+              <Photo src={destImage(selAct.item.dest_key)} scrim={false} className="h-16 w-16 shrink-0 rounded-2xl" />
+              <span className="min-w-0 flex-1"><span className="block truncate text-lg font-bold text-ink">{selAct.title}</span><span className="text-[15px] text-stone-600">{selAct.start} – {selAct.end}</span></span>
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-ink text-white"><ArrowUpRight size={20} aria-hidden /></span>
+            </Link>
+          )}
+        </div>
+      </section>
+
+      <div id="timeline"><DayTimeline d={today} title="Today" editable now={now} risks={tour.risks} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} /></div>
+
       <ReportChange tour={tour} today={today} fire={fire} busy={busy} />
 
-      <DayTimeline d={today} editable risks={tour.risks} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} />
-      {tomorrow && <div className="opacity-80"><DayTimeline d={tomorrow} compact risks={tour.risks} /></div>}
-      <Changes tour={tour} />
+      {tomorrow && (
+        <Link to="/plan" className="flex items-center gap-4 rounded-[1.75rem] bg-white p-3 pr-4 shadow-soft">
+          <Photo src={destImage(tomorrow.dest)} scrim={false} className="h-16 w-16 shrink-0 rounded-2xl" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-stone-500">Tomorrow</span>
+            <span className="block truncate text-lg font-bold text-ink">{tomorrow.dest_name} · {tomorrow.items.filter((i) => live(i) && i.kind === 'activity').length} plans</span>
+          </span>
+          <ArrowRight size={20} className="text-stone-500" aria-hidden />
+        </Link>
+      )}
       <Coordinator c={tour.coordinator} />
+      <Changes tour={tour} />
     </>
   )
 }
 
 function Prepare({ tour, state, onFix }) {
   const { refresh } = useTour()
+  const [open, setOpen] = useState(null)
   const days = Math.round((new Date(tour.start_date) - new Date(state.demo_date)) / 864e5)
   const vouchers = tour.days_detail.flatMap((d) => d.items).filter((i) => live(i) && i.booking_ref)
   const toggle = async (c) => { if (!c.auto) { await api.checklist(tour.id, c.key, !c.done); refresh() } }
-  const done = tour.checklist.filter((c) => c.done).length
+  const todo = tour.checklist.filter((c) => !c.done)
+  const done = tour.checklist.length - todo.length
   return (
     <>
-      <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-rani-600 to-rani-700 px-4 py-4 text-white">
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-rani-100"><CalendarClock size={13} /> Starts in {days} day{days === 1 ? '' : 's'}</div>
-          <h2 className="mt-1 text-xl font-bold leading-tight">{tour.title}</h2>
-          <p className="mt-1 text-sm text-rani-50">{fmtDate(tour.start_date, { weekday: 'short', day: 'numeric', month: 'short' })} · {tour.route.map((r) => r.name).join(' → ')}</p>
+      <Photo src={destImage(tour.route[0]?.dest)} alt={tour.route[0]?.name} scrim="both" className="rounded-[2.25rem] shadow-float">
+        <div className="flex min-h-[16rem] flex-col justify-between p-5 text-white">
+          <span className="w-fit rounded-full bg-white px-3 py-1.5 text-sm font-bold text-ink">Starts in {days} day{days === 1 ? '' : 's'}</span>
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-white/80">{fmtDate(tour.start_date, { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+            <h2 className="mt-1 text-[1.75rem] font-bold leading-tight">{tour.route.map((r) => r.name).join(' → ')}</h2>
+          </div>
         </div>
-      </Card>
+      </Photo>
       <Risks tour={tour} onFix={onFix} />
-      <Card className="p-3">
-        <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-stone-500"><span>Pre-trip checklist</span><span>{done}/{tour.checklist.length}</span></div>
-        <ul className="mt-2 space-y-1.5">
+
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" onClick={() => setOpen('check')} className="flex flex-col items-start rounded-[1.75rem] bg-white p-4 text-left shadow-soft">
+          <span className="relative grid h-14 w-14 place-items-center">
+            <svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden><circle cx="18" cy="18" r="15.5" fill="none" stroke="#e9eef5" strokeWidth="4" /><circle cx="18" cy="18" r="15.5" fill="none" stroke={todo.length ? '#1f4f8f' : '#16a34a'} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(done / Math.max(1, tour.checklist.length)) * 97.4} 97.4`} /></svg>
+            <span className="font-display text-base font-bold text-ink">{done}/{tour.checklist.length}</span>
+          </span>
+          <span className="mt-3 text-lg font-bold text-ink">{todo.length ? `${todo.length} to do` : 'All set'}</span>
+          <span className="text-sm text-stone-600">Pre-trip checklist</span>
+        </button>
+        <button type="button" onClick={() => setOpen('vouchers')} className="flex flex-col items-start rounded-[1.75rem] bg-white p-4 text-left shadow-soft">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-rani-50 text-rani-600"><Ticket size={24} aria-hidden /></span>
+          <span className="mt-3 text-lg font-bold text-ink">{vouchers.length} vouchers</span>
+          <span className="text-sm text-stone-600">Ready to show</span>
+        </button>
+      </div>
+      {todo.slice(0, 2).map((c) => (
+        <button key={c.key} type="button" onClick={() => (c.key === 'balance' ? null : toggle(c))} className="flex min-h-16 w-full items-center gap-3 rounded-3xl bg-white px-4 text-left shadow-soft">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg ring-2 ring-stone-300" aria-hidden />
+          <span className="flex-1 text-[15px] font-semibold text-ink">{c.label}</span>
+          {c.key === 'balance' && <Link to="/price" className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-white">Pay {inr(tour.payments.balance)}</Link>}
+        </button>
+      ))}
+      <Coordinator c={tour.coordinator} />
+      <Changes tour={tour} />
+
+      <Sheet open={open === 'check'} onClose={() => setOpen(null)} title="Pre-trip checklist">
+        <ul className="space-y-2">
           {tour.checklist.map((c) => (
             <li key={c.key}>
-              <button onClick={() => toggle(c)} className="flex w-full items-start gap-2 text-left text-sm">
-                <span className={cx('mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md ring-1', c.done ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-white ring-stone-300')}>{c.done && <Check size={13} />}</span>
-                <span className={cx(c.done && 'text-stone-400 line-through')}>{c.label}</span>
+              <button type="button" onClick={() => toggle(c)} className="flex min-h-14 w-full items-center gap-3 rounded-2xl bg-white px-4 text-left">
+                <span className={cx('grid h-7 w-7 shrink-0 place-items-center rounded-lg', c.done ? 'bg-green-600 text-white' : 'ring-2 ring-stone-300')}>{c.done && <Check size={16} />}</span>
+                <span className={cx('text-[15px] font-semibold', c.done ? 'text-stone-500' : 'text-ink')}>{c.label.split(':')[0]}</span>
               </button>
-              {c.key === 'balance' && !c.done && <Link to="/price" className="ml-7 text-xs font-semibold text-rani-600">Pay {inr(tour.payments.balance)} →</Link>}
             </li>
           ))}
         </ul>
-      </Card>
-      <Coordinator c={tour.coordinator} />
-      <Card className="p-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Vouchers ({vouchers.length})</div>
-        <ul className="mt-2 divide-y divide-stone-100">
+      </Sheet>
+      <Sheet open={open === 'vouchers'} onClose={() => setOpen(null)} title={`${vouchers.length} vouchers`}>
+        <ul className="divide-y divide-stone-200 rounded-2xl bg-white">
           {vouchers.map((v) => (
-            <li key={v.id} className="flex items-center justify-between gap-2 py-1.5 text-xs">
-              <span className="min-w-0 truncate"><span className="text-stone-400">D{v.day}</span> {v.title}</span>
-              <span className="flex shrink-0 items-center gap-1.5">{VENDOR_CHIP[v.vendor_status]}<span className="font-mono">{v.booking_ref}</span></span>
+            <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <span className="min-w-0"><span className="block text-sm font-semibold text-stone-500">Day {v.day}</span><span className="block truncate font-semibold text-ink">{v.title}</span></span>
+              <span className="shrink-0 rounded-lg bg-ink px-2.5 py-1 font-mono text-sm text-white">{v.booking_ref}</span>
             </li>
           ))}
         </ul>
-      </Card>
-      <Changes tour={tour} />
+      </Sheet>
     </>
   )
 }
@@ -246,13 +305,12 @@ export default function Trip() {
   const title = { plan: 'Not booked yet', prepare: 'Get ready', operate: `Day ${tour.current_day} of ${tour.days}`, complete: 'Welcome home', review: 'Thanks for travelling' }[tour.stage]
   return (
     <div>
-      <header className="px-4 pt-5 pb-3">
-        <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{fmtDate(state.demo_date, { weekday: 'short', day: 'numeric', month: 'short' })} · {fmtTime(state.demo_time)}</div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        {tour.stage === 'operate' && <p className="text-sm text-stone-500">{tour.days_detail[tour.current_day - 1].dest_name} · {tour.title}</p>}
+      <header className="pt-safe px-5 pt-6 pb-4 md:px-6">
+        <p className="text-sm font-bold uppercase tracking-[0.16em] text-rani-600">{fmtDate(state.demo_date, { weekday: 'short', day: 'numeric', month: 'short' })} · {fmtTime(state.demo_time)}</p>
+        <h1 className="mt-1 text-[2.25rem] font-extrabold leading-[1.05] text-ink">{tour.stage === 'operate' ? `Day ${tour.current_day} in ${tour.days_detail[tour.current_day - 1].dest_name}` : title}</h1>
       </header>
       <JourneyStrip stage={tour.stage} day={tour.current_day} days={tour.days} hideAction />
-      <section className="space-y-3 px-4 pt-4">
+      <section className="space-y-5 px-5 pt-5 md:px-6">
         {tour.stage === 'plan' && <Empty title="Your plan isn't booked yet" action={<Link to="/price"><Button>Review price & book</Button></Link>}>Once booked, this becomes your live trip hub: vouchers, checklist, alerts and replanning.</Empty>}
         {tour.stage === 'prepare' && <Prepare tour={tour} state={state} onFix={onFix} />}
         {tour.stage === 'operate' && <Operate tour={tour} state={state} onFix={onFix} />}

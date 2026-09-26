@@ -233,7 +233,8 @@ def ser_offering(o: dict, brief=False) -> dict:
          "price": o["price"], "rating": o["rating"], "rating_count": o["rating_count"], "tags": o["tags"],
          "duration_min": o["duration_min"], "indoor_outdoor": o["indoor_outdoor"], "tier": o["tier"], "mode": o["mode"],
          "vendor_id": o["vendor_id"], "vendor_name": o["vendor_name"], "available": o["available"], "status": o["status"],
-         "kid_friendly": o["kid_friendly"], "step_free": o["step_free"], "open": o["open"], "close": o["close"]}
+         "kid_friendly": o["kid_friendly"], "step_free": o["step_free"], "open": o["open"], "close": o["close"],
+         "lat": o.get("lat"), "lng": o.get("lng")}
     if not brief:
         d |= {"description": o["description"], "amenities": o["amenities"], "closed_weekdays": o["closed_weekdays"], "capacity": o["capacity"]}
     return d

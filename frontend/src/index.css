@@ -15,23 +15,26 @@
   --color-rani-700: #183f73;
   --color-rani-900: #0e2547;
 
-  /* neutrals: slate with a blue cast */
-  --color-stone-50: #f5f7fa;
-  --color-stone-100: #ebeff4;
-  --color-stone-200: #dbe2ea;
-  --color-stone-300: #c2ccd8;
-  --color-stone-400: #8e9bad;
-  --color-stone-500: #5d6b7e;
-  --color-stone-600: #48556a;
-  --color-stone-700: #354152;
-  --color-stone-800: #222c3a;
-  --color-stone-900: #141b26;
-  --color-stone-950: #0b1019;
+  /* neutrals: slate with a blue cast (darker mid-tones so secondary text stays readable) */
+  --color-stone-50: #f4f7fb;
+  --color-stone-100: #e9eef5;
+  --color-stone-200: #d6dee9;
+  --color-stone-300: #b3bfce;
+  --color-stone-400: #6c7a8d;
+  --color-stone-500: #4d5b6e;
+  --color-stone-600: #3b4758;
+  --color-stone-700: #2a3544;
+  --color-stone-800: #1a2331;
+  --color-stone-900: #0e1522;
+  --color-stone-950: #070b13;
+
+  /* ink: near-black navy for active chips, nav and headlines (reference: Nature Power) */
+  --color-ink: #0c1626;
 
   /* canvas: cool mist */
-  --color-sand-50: #edf1f6;
-  --color-sand-100: #e1e8f0;
-  --color-sand-200: #cdd8e4;
+  --color-sand-50: #eaf0f7;
+  --color-sand-100: #dde6f1;
+  --color-sand-200: #c9d6e6;
 
   /* sky accent for highlights */
   --color-sky-50: #ecf6fc;
@@ -39,7 +42,15 @@
   --color-sky-900: #0b3f5e;
 
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Fraunces", ui-serif, Georgia, serif;
+  --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
+
+  /* larger type scale: nothing on a phone should need squinting */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.15rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.35rem;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.6rem;
 
   --radius-4xl: 2rem;
   --shadow-soft: 0 1px 2px rgb(20 27 38 / 0.04), 0 8px 24px rgb(20 27 38 / 0.06);
@@ -56,7 +67,10 @@ body {
   text-rendering: optimizeLegibility;
 }
 h1, h2, h3 { letter-spacing: -0.015em; text-wrap: balance; }
-.font-display { font-family: var(--font-display); font-optical-sizing: auto; letter-spacing: -0.02em; font-weight: 600; }
+h1, h2, .font-display { font-family: var(--font-display); letter-spacing: -0.025em; }
+h1 { font-weight: 700; }
+h2, h3 { font-weight: 700; }
+.font-display { font-weight: 700; }
 button, a, select, summary, [role="button"] { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--color-rani-500); outline-offset: 2px; border-radius: 12px; }
 input, select, textarea { font-size: 16px; } /* stops iOS Safari zooming on focus */
@@ -87,9 +101,11 @@ input, select, textarea { font-size: 16px; } /* stops iOS Safari zooming on focu
 
 /* ------------------------------------------------------------------ trip map pins */
 .tc-pin { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; padding: 6px; min-width: 44px; min-height: 44px; justify-content: center; }
-.tc-dot { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; font: 700 12px/1 var(--font-sans); color: #fff; background: #3a6db4; box-shadow: 0 0 0 3px #fff, 0 4px 12px rgb(14 37 71 / .3); transition: transform .15s; }
+.tc-dot { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 999px; font: 800 14px/1 var(--font-display); color: #fff; background: #3a6db4; box-shadow: 0 0 0 3px #fff, 0 4px 12px rgb(14 37 71 / .3); transition: transform .15s; }
 .tc-dot-sm { width: 16px; height: 16px; }
-.tc-label { font: 600 12px/1 var(--font-sans); color: var(--color-stone-900); background: rgb(255 255 255 / .9); padding: 3px 7px; border-radius: 999px; box-shadow: 0 2px 6px rgb(14 37 71 / .15); white-space: nowrap; }
+.tc-dot-md { width: 26px; height: 26px; font-size: 12px; }
+.tc-pin[data-kind="hotel"] .tc-dot { background: #0c1626; }
+.tc-label { font: 700 13px/1 var(--font-sans); color: var(--color-stone-900); background: rgb(255 255 255 / .95); padding: 4px 8px; border-radius: 999px; box-shadow: 0 2px 6px rgb(14 37 71 / .15); white-space: nowrap; }
 .tc-pin[data-status="done"] .tc-dot { background: #16a34a; }
 .tc-pin[data-status="changed"] .tc-dot { background: #ea580c; }
 .tc-pin[data-status="current"] .tc-dot { background: #1f4f8f; animation: tc-pulse 1.6s ease-out infinite; }

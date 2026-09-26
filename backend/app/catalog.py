@@ -191,3 +191,13 @@ REVIEW_SNIPPETS = {
     4: ["Really good, a bit crowded.", "Great experience, started a little late.", "Lovely, would recommend."],
     3: ["Okay, but felt rushed.", "Fine, not memorable."],
 }
+
+# Extra demo data (more cities, experiences at real coordinates, travelers, tours) lives in catalog_extra.
+from .catalog_extra import (ACT_COORDS, EXTRA_ACTIVITIES, EXTRA_COORDINATORS, EXTRA_CUSTOMERS,  # noqa: E402
+                            EXTRA_DESTINATIONS, EXTRA_HOTELS)
+
+DESTINATIONS.update(EXTRA_DESTINATIONS)
+ACTIVITIES += EXTRA_ACTIVITIES
+HOTELS.update(EXTRA_HOTELS)
+CUSTOMERS += EXTRA_CUSTOMERS
+COORDINATORS += EXTRA_COORDINATORS
