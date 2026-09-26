@@ -6,6 +6,7 @@ import { useTour } from '../store'
 import { destImage } from '../media'
 import { useSaved } from '../lib/saved'
 import { PageBody, PageHero, SearchPill, SectionHead } from '../components/page'
+import CoverflowCarousel from '../components/CoverflowCarousel'
 import { INTEREST, Photo, TOP_INTERESTS, cx } from '../components/ui'
 
 const hours = (m) => (m >= 60 ? `${Math.round(m / 6) / 10} h` : `${m} min`)
@@ -100,9 +101,23 @@ export default function Discover() {
           <section aria-label="Popular destinations">
             <SectionHead title="Popular destinations" action={allDest ? 'Show less' : 'View all'} onAction={() => setAllDest((v) => !v)} />
             {!data ? <div className="grid grid-cols-2 gap-3 md:grid-cols-4" aria-hidden>{[0, 1, 2, 3].map((i) => <div key={i} className="aspect-[3/4] animate-pulse rounded-[1.6rem] bg-stone-200" />)}</div> : (
-              <ul className="no-scrollbar -mx-5 flex snap-x-mand gap-3 overflow-x-auto px-5 pb-1 md:mx-0 md:grid md:grid-cols-4 md:overflow-visible md:px-0">
-                {data.destinations.slice(0, allDest ? 12 : 8).map((d) => <li key={d.key} className="w-[42vw] max-w-[12rem] shrink-0 snap-start md:w-auto md:max-w-none"><DestCard d={d} /></li>)}
-              </ul>
+              <>
+                <div className="md:hidden">
+                  <CoverflowCarousel
+                    slides={data.destinations.slice(0, allDest ? 12 : 8).map((d) => ({
+                      key: d.key,
+                      src: destImage(d.key),
+                      alt: d.name,
+                      title: d.name,
+                      subtitle: `${d.region} · ${d.experiences} experiences`,
+                      onSelect: () => nav(`/destination/${d.key}`),
+                    }))}
+                  />
+                </div>
+                <ul className="hidden gap-3 md:grid md:grid-cols-4">
+                  {data.destinations.slice(0, allDest ? 12 : 8).map((d) => <li key={d.key}><DestCard d={d} /></li>)}
+                </ul>
+              </>
             )}
           </section>
 
