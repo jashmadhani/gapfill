@@ -76,6 +76,13 @@ html, body, #root { min-height: 100%; }
   background: radial-gradient(52rem 16rem at 50% 0%, color-mix(in oklab, white 45%, transparent) 0%, transparent 70%);
 }
 
+/* Assist page: the one deliberately-warm accent in an otherwise all-blue app — a soft
+   violet smudge rising behind the suggestion chips and input, per the reference board. */
+.assist-glow {
+  background: radial-gradient(120% 100% at 50% 100%, color-mix(in oklab, #8b5cf6 55%, transparent) 0%, transparent 65%);
+  filter: blur(28px);
+}
+
 /* Floating bottom tab bar: subtle glassmorphism, a cylinder rather than a flush box. */
 .tab-glass {
   background: color-mix(in oklab, white 72%, transparent);
