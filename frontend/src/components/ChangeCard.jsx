@@ -23,7 +23,7 @@ export function OptionList({ options, choice, setChoice, dark = false }) {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className={cx('grid h-5 w-5 place-items-center rounded-full text-[11px] font-bold', sel ? 'bg-rani-600 text-white' : dark ? 'bg-stone-700 text-stone-200' : 'bg-stone-100 text-stone-600')}>{o.key}</span>
+                  <span className={cx('grid h-5 w-5 place-items-center rounded-full text-xs font-bold', sel ? 'bg-rani-600 text-white' : dark ? 'bg-stone-700 text-stone-200' : 'bg-stone-100 text-stone-600')}>{o.key}</span>
                   <span className={cx('font-semibold leading-snug', dark ? 'text-stone-100' : 'text-stone-900')}>{o.label}</span>
                   {o.recommended && <Chip tone="green">Recommended</Chip>}
                   {o.within_budget === false && <Chip tone="amber">still over budget</Chip>}
@@ -34,10 +34,10 @@ export function OptionList({ options, choice, setChoice, dark = false }) {
                 <div className={cx('font-bold', o.cost_delta > 0 ? 'text-red-600' : o.cost_delta < 0 ? 'text-emerald-600' : dark ? 'text-stone-200' : 'text-stone-700')}>
                   {o.cost_delta === 0 ? '₹0' : signedInr(o.cost_delta)}
                 </div>
-                <div className={cx('text-[10px]', dark ? 'text-stone-500' : 'text-stone-400')}>{o.operator_cost ? `operator pays ${inr(o.operator_cost)}` : 'change in total'}</div>
+                <div className={cx('text-xs', dark ? 'text-stone-500' : 'text-stone-400')}>{o.operator_cost ? `operator pays ${inr(o.operator_cost)}` : 'change in total'}</div>
               </div>
             </div>
-            <div className={cx('mt-2 grid grid-cols-3 gap-2 text-[11px]', dark ? 'text-stone-400' : 'text-stone-500')}>
+            <div className={cx('mt-2 grid grid-cols-3 gap-2 text-xs', dark ? 'text-stone-400' : 'text-stone-500')}>
               <div><div>Time lost</div><div className={cx('font-semibold', dark ? 'text-stone-200' : 'text-stone-800')}>{o.lost_min ? `${o.lost_min} min` : 'none'}</div></div>
               <div><div>Changes</div><div className={cx('font-semibold', dark ? 'text-stone-200' : 'text-stone-800')}>{o.items_affected} item{o.items_affected === 1 ? '' : 's'}</div></div>
               <div><div>Fit for you</div><Bar value={o.pref_score} max={100} tone={o.pref_score >= 60 ? 'green' : 'amber'} className="mt-1" /></div>
@@ -108,8 +108,8 @@ export default function ChangeCard() {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-stone-900/40 backdrop-blur-[2px]">
-      <div className="animate-slide-up max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-sand-50 p-4 pb-6 shadow-2xl">
+    <div className="animate-fade fixed inset-0 z-40 flex items-end justify-center bg-stone-900/45 backdrop-blur-sm md:items-center md:p-6">
+      <div role="dialog" aria-modal="true" className="animate-slide-up max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-[2rem] bg-sand-50 p-5 pb-[max(24px,env(safe-area-inset-bottom))] shadow-2xl md:max-w-lg md:rounded-[2rem]">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-stone-300" />
         <div className="flex items-start gap-3">
           <div className="pulse-ring grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rani-600 text-white"><Icon size={20} /></div>
@@ -128,7 +128,7 @@ export default function ChangeCard() {
         </button>
         {showImpact && <div className="mt-1.5"><ImpactList impact={ev.impact} /></div>}
 
-        <div className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-stone-500">Compare recovery plans</div>
+        <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Compare recovery plans</div>
         <div className="mt-1.5"><OptionList options={ev.options} choice={choice} setChoice={setChoice} /></div>
 
         <div className="mt-4 grid grid-cols-2 gap-2">

@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
+  Check, Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
   Plane, ShoppingBag, Sparkles, Star, Sun, TrainFront, Umbrella, UtensilsCrossed,
 } from 'lucide-react'
 
@@ -37,9 +38,31 @@ export function cx(...a) {
   return a.filter(Boolean).join(' ')
 }
 
+// Full-bleed photo with a brand-blue gradient underneath, so a slow or failed image still looks intentional.
+export function Photo({ src, alt = '', className, children, scrim = 'b' }) {
+  const [ok, setOk] = useState(true)
+  return (
+    <div className={cx('relative overflow-hidden bg-gradient-to-br from-rani-500 via-rani-700 to-stone-900', className)}>
+      {src && ok && <img src={src} alt={alt} loading="lazy" decoding="async" onError={() => setOk(false)} className="animate-fade absolute inset-0 h-full w-full object-cover" />}
+      {scrim && <div className={cx('absolute inset-0', scrim === 'b' ? 'scrim-b' : scrim === 't' ? 'scrim-t' : 'scrim-b')} aria-hidden />}
+      {scrim === 'both' && <div className="scrim-t absolute inset-0" aria-hidden />}
+      {children && <div className="relative h-full">{children}</div>}
+    </div>
+  )
+}
+
+// Round frosted button for use over photos (back, save, share).
+export function GlassIconButton({ label, children, className, ...p }) {
+  return (
+    <button type="button" aria-label={label} className={cx('glass grid h-11 w-11 place-items-center rounded-full text-stone-900 shadow-soft transition hover:bg-white', className)} {...p}>
+      {children}
+    </button>
+  )
+}
+
 export function Button({ variant = 'primary', className, ...p }) {
   const styles = {
-    primary: 'bg-rani-600 text-white hover:bg-rani-700 active:bg-rani-900 shadow-sm',
+    primary: 'bg-rani-600 text-white hover:bg-rani-700 active:bg-rani-900 shadow-[0_8px_20px_rgb(31_79_143_/_0.28)]',
     secondary: 'bg-white text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50',
     ghost: 'text-stone-600 hover:bg-stone-100',
     dark: 'bg-stone-900 text-white hover:bg-stone-800',
@@ -47,27 +70,28 @@ export function Button({ variant = 'primary', className, ...p }) {
   }
   return (
     <button
-      className={cx('inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
+      className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
       {...p}
     />
   )
 }
 
 export function Card({ className, ...p }) {
-  return <div className={cx('rounded-2xl bg-white ring-1 ring-stone-200/80 shadow-[0_1px_2px_rgba(0,0,0,.04)]', className)} {...p} />
+  return <div className={cx('rounded-3xl bg-white ring-1 ring-stone-200/70 shadow-soft', className)} {...p} />
 }
 
 export function Chip({ className, children, tone = 'stone' }) {
   const tones = {
     stone: 'bg-stone-100 text-stone-700',
     rani: 'bg-rani-50 text-rani-700',
+    glass: 'glass text-stone-900',
     green: 'bg-emerald-50 text-emerald-700',
     amber: 'bg-amber-50 text-amber-800',
     red: 'bg-red-50 text-red-700',
     blue: 'bg-sky-50 text-sky-700',
     dark: 'bg-stone-800 text-stone-200',
   }
-  return <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', tones[tone], className)}>{children}</span>
+  return <span className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium', tones[tone], className)}>{children}</span>
 }
 
 export function Rating({ value, count, className }) {
@@ -115,10 +139,10 @@ export function Spinner({ label = 'Loading…' }) {
 
 export function Segmented({ options, value, onChange }) {
   return (
-    <div className="grid rounded-xl bg-stone-100 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
+    <div className="grid rounded-full bg-stone-100 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
       {options.map((o) => (
         <button key={o.value} type="button" onClick={() => onChange(o.value)}
-          className={cx('rounded-lg px-2 py-2 text-xs font-semibold transition', value === o.value ? 'bg-white shadow text-stone-900' : 'text-stone-500')}>
+          className={cx('min-h-10 rounded-full px-2 text-xs font-semibold transition', value === o.value ? 'bg-white text-stone-900 shadow-soft' : 'text-stone-500 hover:text-stone-800')}>
           {o.label}
         </button>
       ))}
@@ -137,22 +161,22 @@ const STAGE_LINK = { discover: '/', personalize: '/personalize', plan: '/plan', 
 export function JourneyStrip({ stage }) {
   const at = STAGE_INDEX[stage] ?? 1
   return (
-    <div className="flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+    <nav aria-label="Tour stages" className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 pb-1 md:px-6">
       {JOURNEY.map(([k, label], i) => (
-        <Link key={k} to={STAGE_LINK[k]}
-          className={cx('shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold leading-tight',
-            i < at ? 'bg-emerald-50 text-emerald-800' : i === at ? 'bg-rani-600 text-white' : 'bg-white text-stone-400 ring-1 ring-stone-200')}>
-          {i < at ? '✓ ' : ''}{label}
+        <Link key={k} to={STAGE_LINK[k]} aria-current={i === at ? 'step' : undefined}
+          className={cx('inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-semibold transition',
+            i < at ? 'bg-white text-stone-600 ring-1 ring-stone-200' : i === at ? 'bg-rani-600 text-white' : 'text-stone-400')}>
+          {i < at && <Check size={12} aria-hidden />}{label}
         </Link>
       ))}
-    </div>
+    </nav>
   )
 }
 
 export function Empty({ title, children, action }) {
   return (
     <Card className="p-5 text-center">
-      <Sparkles className="mx-auto text-rani-500" />
+      <Sparkles className="mx-auto text-rani-500" aria-hidden />
       <h2 className="mt-2 font-semibold">{title}</h2>
       <p className="mt-1 text-sm text-stone-500">{children}</p>
       {action && <div className="mt-3">{action}</div>}

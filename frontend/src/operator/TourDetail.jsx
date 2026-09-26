@@ -30,7 +30,7 @@ export function PendingChange({ ev, onDone }) {
             <Button className="flex-1" disabled={busy} onClick={() => act('accept')}>Apply plan {choice} for traveler</Button>
             <Button variant="secondary" disabled={busy} onClick={() => act('dismiss')}>Keep original</Button>
           </div>
-          <p className="mt-1 text-[11px] text-stone-500">The traveler sees the same options on their phone — whoever decides first wins; vendors are re-booked and notified automatically.</p>
+          <p className="mt-1 text-xs text-stone-500">The traveler sees the same options on their phone — whoever decides first wins; vendors are re-booked and notified automatically.</p>
         </div>
       </div>
     </Card>
@@ -83,10 +83,10 @@ export default function TourDetail() {
         <div className="space-y-4">
           <Card className="p-4">
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-              <div><div className="text-[11px] uppercase tracking-wide text-stone-500">Route</div><div className="font-medium">{t.route.map((r) => `${r.name} (${r.nights}N)`).join(' → ')}</div></div>
-              <div><div className="text-[11px] uppercase tracking-wide text-stone-500">Preferences</div><div className="font-medium">{TIER_LABEL[t.prefs.hotel_tier]} · {MODE[t.prefs.transport]?.label} · {PACE_LABEL[t.prefs.pace]}{t.prefs.needs?.step_free ? ' · step-free' : ''}</div></div>
-              <div><div className="text-[11px] uppercase tracking-wide text-stone-500">Interests</div><div className="flex flex-wrap gap-1">{t.prefs.interests.map((i) => <Chip key={i}>{INTEREST[i]?.label}</Chip>)}</div></div>
-              <div><div className="text-[11px] uppercase tracking-wide text-stone-500">Group</div><div className="font-medium">{t.group.members?.join(', ')}</div></div>
+              <div><div className="text-xs uppercase tracking-wide text-stone-500">Route</div><div className="font-medium">{t.route.map((r) => `${r.name} (${r.nights}N)`).join(' → ')}</div></div>
+              <div><div className="text-xs uppercase tracking-wide text-stone-500">Preferences</div><div className="font-medium">{TIER_LABEL[t.prefs.hotel_tier]} · {MODE[t.prefs.transport]?.label} · {PACE_LABEL[t.prefs.pace]}{t.prefs.needs?.step_free ? ' · step-free' : ''}</div></div>
+              <div><div className="text-xs uppercase tracking-wide text-stone-500">Interests</div><div className="flex flex-wrap gap-1">{t.prefs.interests.map((i) => <Chip key={i}>{INTEREST[i]?.label}</Chip>)}</div></div>
+              <div><div className="text-xs uppercase tracking-wide text-stone-500">Group</div><div className="font-medium">{t.group.members?.join(', ')}</div></div>
             </div>
           </Card>
 
@@ -142,7 +142,7 @@ export default function TourDetail() {
             <div className="mt-3 border-t border-stone-100 pt-3">
               <div className="flex justify-between text-sm"><span>Paid</span><b>{inr(t.payments.net_paid)}</b></div>
               <div className={cx('flex justify-between text-sm', t.payments.balance > 0 ? 'text-amber-700' : 'text-emerald-700')}><span>{t.payments.balance >= 0 ? 'Balance due' : 'Credit to refund'}</span><b>{inr(Math.abs(t.payments.balance))}</b></div>
-              <ul className="mt-2 space-y-0.5 text-[11px] text-stone-500">
+              <ul className="mt-2 space-y-0.5 text-xs text-stone-500">
                 {t.payments.ledger.map((l) => <li key={l.id} className="flex justify-between"><span>{new Date(l.at).toLocaleDateString('en-IN')} · {l.note}</span><span>{l.kind === 'refund' ? '−' : ''}{inr(l.amount)}</span></li>)}
               </ul>
               {t.status !== 'draft' && (

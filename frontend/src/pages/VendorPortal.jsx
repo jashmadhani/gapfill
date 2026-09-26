@@ -102,14 +102,14 @@ export default function VendorPortal() {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-stone-500">Closing instantly alerts every affected traveler with recovery options, and the operator’s coordinator.</p>
+          <p className="mt-2 text-xs text-stone-500">Closing instantly alerts every affected traveler with recovery options, and the operator’s coordinator.</p>
           {flash && <div className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{flash}</div>}
         </Card>
 
         <Card className="grid grid-cols-3 gap-2 p-3 text-center">
-          <div className="rounded-lg bg-stone-50 p-2"><CalendarCheck size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{v.stats.bookings}</div><div className="text-[11px] text-stone-500">active bookings</div></div>
-          <div className="rounded-lg bg-stone-50 p-2"><IndianRupee size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{inr(v.stats.revenue)}</div><div className="text-[11px] text-stone-500">booked value</div></div>
-          <div className="rounded-lg bg-stone-50 p-2"><Star size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{v.stats.rating?.toFixed(1)}</div><div className="text-[11px] text-stone-500">avg rating</div></div>
+          <div className="rounded-lg bg-stone-50 p-2"><CalendarCheck size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{v.stats.bookings}</div><div className="text-xs text-stone-500">active bookings</div></div>
+          <div className="rounded-lg bg-stone-50 p-2"><IndianRupee size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{inr(v.stats.revenue)}</div><div className="text-xs text-stone-500">booked value</div></div>
+          <div className="rounded-lg bg-stone-50 p-2"><Star size={14} className="mx-auto text-stone-400" /><div className="text-lg font-bold">{v.stats.rating?.toFixed(1)}</div><div className="text-xs text-stone-500">avg rating</div></div>
         </Card>
 
         <div className="flex items-center justify-between pt-1 text-xs font-semibold uppercase tracking-wide text-stone-500">

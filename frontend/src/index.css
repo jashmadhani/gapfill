@@ -1,23 +1,86 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ TourCraft theme
+   Misty-mountain blues from the reference boards: slate-blue neutrals, a deep ocean
+   brand blue for actions, and a cool mist canvas. Existing palette names are remapped
+   (rani = brand, stone = neutrals, sand = canvas) so every screen picks up the theme.
+   Text pairs used in the UI keep >= 4.5:1 contrast. */
 @theme {
-  --color-rani-50: #fdf2f5;
-  --color-rani-100: #fce7ec;
-  --color-rani-200: #f9cfdb;
-  --color-rani-500: #d9466b;
-  --color-rani-600: #be3455;
-  --color-rani-700: #9f2946;
-  --color-rani-900: #5c1628;
-  --color-sand-50: #fbf8f3;
-  --color-sand-100: #f4eee3;
-  --color-sand-200: #e8dcc8;
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* brand: ocean blue */
+  --color-rani-50: #eef4fb;
+  --color-rani-100: #dce8f7;
+  --color-rani-200: #b9d1ee;
+  --color-rani-500: #3a6db4;
+  --color-rani-600: #1f4f8f;
+  --color-rani-700: #183f73;
+  --color-rani-900: #0e2547;
+
+  /* neutrals: slate with a blue cast */
+  --color-stone-50: #f5f7fa;
+  --color-stone-100: #ebeff4;
+  --color-stone-200: #dbe2ea;
+  --color-stone-300: #c2ccd8;
+  --color-stone-400: #8e9bad;
+  --color-stone-500: #5d6b7e;
+  --color-stone-600: #48556a;
+  --color-stone-700: #354152;
+  --color-stone-800: #222c3a;
+  --color-stone-900: #141b26;
+  --color-stone-950: #0b1019;
+
+  /* canvas: cool mist */
+  --color-sand-50: #edf1f6;
+  --color-sand-100: #e1e8f0;
+  --color-sand-200: #cdd8e4;
+
+  /* sky accent for highlights */
+  --color-sky-50: #ecf6fc;
+  --color-sky-700: #0f6391;
+  --color-sky-900: #0b3f5e;
+
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  --radius-4xl: 2rem;
+  --shadow-soft: 0 1px 2px rgb(20 27 38 / 0.04), 0 8px 24px rgb(20 27 38 / 0.06);
+  --shadow-float: 0 12px 40px rgb(14 37 71 / 0.18);
 }
 
-html, body, #root { height: 100%; }
-body { @apply bg-sand-50 text-stone-900 antialiased; }
+html, body, #root { min-height: 100%; }
+body {
+  background: var(--color-sand-50);
+  color: var(--color-stone-900);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+}
+h1, h2, h3 { letter-spacing: -0.015em; text-wrap: balance; }
+.font-display { font-family: var(--font-display); font-optical-sizing: auto; letter-spacing: -0.02em; font-weight: 600; }
+button, a, select, summary, [role="button"] { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--color-rani-500); outline-offset: 2px; border-radius: 12px; }
+input, select, textarea { font-size: 16px; } /* stops iOS Safari zooming on focus */
+
+/* frosted glass surfaces (reference: Peak) */
+.glass { background: rgb(255 255 255 / 0.72); -webkit-backdrop-filter: blur(18px) saturate(1.4); backdrop-filter: blur(18px) saturate(1.4); }
+.glass-dark { background: rgb(14 22 36 / 0.42); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.scrim-b { background: linear-gradient(180deg, rgb(11 16 25 / 0) 30%, rgb(11 16 25 / 0.72) 100%); }
+.scrim-t { background: linear-gradient(180deg, rgb(11 16 25 / 0.45) 0%, rgb(11 16 25 / 0) 45%); }
+
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.snap-x-mand { scroll-snap-type: x mandatory; }
+.snap-start { scroll-snap-align: start; }
 
 @keyframes slide-up { from { transform: translateY(24px); opacity: 0 } to { transform: none; opacity: 1 } }
-.animate-slide-up { animation: slide-up .28s ease-out; }
-@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgb(217 70 107 / .45) } 100% { box-shadow: 0 0 0 14px rgb(217 70 107 / 0) } }
+.animate-slide-up { animation: slide-up .28s cubic-bezier(.2,.8,.2,1); }
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+.animate-fade { animation: fade-in .35s ease-out; }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgb(58 109 180 / .45) } 100% { box-shadow: 0 0 0 14px rgb(58 109 180 / 0) } }
 .pulse-ring { animation: pulse-ring 1.4s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}

@@ -6,7 +6,8 @@ import {
 import { api, fmtDate, fmtTime, inr } from '../api'
 import { useTour } from '../store'
 import DayTimeline, { VENDOR_CHIP } from '../components/DayTimeline'
-import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Segmented, Spinner, cx } from '../components/ui'
+import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Spinner, cx } from '../components/ui'
+import { destImage } from '../media'
 
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m }
 const live = (i) => !['replaced', 'cancelled'].includes(i.status) && i.kind !== 'fee'
@@ -88,14 +89,16 @@ function Operate({ tour, state, onFix }) {
     <>
       {hero ? (
         <Card className="overflow-hidden">
-          <div className="bg-gradient-to-br from-rani-600 to-rani-700 px-4 pt-4 pb-3 text-white">
-            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rani-100"><Sparkles size={13} /> {current ? 'Happening now' : 'Up next'}</div>
-            <h2 className="mt-1 flex items-start gap-2 text-xl font-bold leading-tight"><KindIcon item={hero} size={20} className="mt-0.5 shrink-0" /> {hero.title}</h2>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-rani-50">
-              <span className="inline-flex items-center gap-1"><Clock size={14} /> {hero.start_label} – {hero.end_label}</span>
-              <span className="inline-flex items-center gap-1"><MapPin size={14} /> {hero.dest_name}</span>
+          <Photo src={destImage(hero.dest_key || hero.dest_name)} alt={hero.dest_name}>
+            <div className="flex min-h-48 flex-col justify-end px-4 pt-4 pb-4 text-white">
+              <span className="glass-dark inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"><Sparkles size={13} aria-hidden /> {current ? 'Happening now' : 'Up next'}</span>
+              <h2 className="font-display mt-2 flex items-start gap-2 text-2xl leading-tight"><KindIcon item={hero} size={20} className="mt-1 shrink-0" /> {hero.title}</h2>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/85">
+                <span className="inline-flex items-center gap-1"><Clock size={14} aria-hidden /> {hero.start_label} – {hero.end_label}</span>
+                <span className="inline-flex items-center gap-1"><MapPin size={14} aria-hidden /> {hero.dest_name}</span>
+              </div>
             </div>
-          </div>
+          </Photo>
           <div className="space-y-3 p-4">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {hero.booking_ref && <span className="inline-flex items-center gap-1 rounded-md bg-stone-900 px-2 py-0.5 font-mono text-xs text-white"><Ticket size={12} /> {hero.booking_ref}</span>}
@@ -143,7 +146,7 @@ function Prepare({ tour, state, onFix }) {
     <>
       <Card className="overflow-hidden">
         <div className="bg-gradient-to-br from-rani-600 to-rani-700 px-4 py-4 text-white">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rani-100"><CalendarClock size={13} /> Starts in {days} day{days === 1 ? '' : 's'}</div>
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-rani-100"><CalendarClock size={13} /> Starts in {days} day{days === 1 ? '' : 's'}</div>
           <h2 className="mt-1 text-xl font-bold leading-tight">{tour.title}</h2>
           <p className="mt-1 text-sm text-rani-50">{fmtDate(tour.start_date, { weekday: 'short', day: 'numeric', month: 'short' })} · {tour.route.map((r) => r.name).join(' → ')}</p>
         </div>
