@@ -4,6 +4,8 @@ import { Accessibility, Coffee, Minus, Plus, Sparkles, Trash2, UserPlus } from '
 import { api, inr } from '../api'
 import { useTour } from '../store'
 import { Button, INTEREST, InterestPicker, MODE, PACE_LABEL, Segmented, TIER_LABEL, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 import { Avatar, MOOD } from '../components/group'
 
 function Stepper({ value, onChange, min = 0, max = 30 }) {
@@ -122,7 +124,10 @@ export default function Personalize() {
   const inputCls = 'mt-1 min-h-11 w-full rounded-2xl bg-white px-3 ring-1 ring-stone-200 focus:outline-none focus:ring-2 focus:ring-rani-500'
 
   return (
-    <form onSubmit={(e) => e.preventDefault()} className="flex min-h-[calc(100dvh-8rem)] flex-col px-4 pt-5 md:px-6">
+    <div>
+    <PageHero size="sm" img={destImage(f.destinations[0] || 'jaipur')} eyebrow="Plan a trip" title="Your trip, your way" />
+    <PageBody width="narrow">
+    <form onSubmit={(e) => e.preventDefault()} className="flex min-h-[60dvh] flex-col">
       <div>
         <p className="text-sm font-semibold text-rani-600">Step {step + 1} of {STEPS.length}</p>
         <h1 className="font-display text-3xl">{STEPS[step]}</h1>
@@ -146,7 +151,7 @@ export default function Personalize() {
             <div className="text-sm font-semibold">
               Total budget
               <div className="font-display mt-1 text-3xl font-semibold">{inr(Number(f.budget))}</div>
-              <input type="range" min={20000} max={600000} step={5000} value={f.budget} onChange={(e) => set('budget', Number(e.target.value))} aria-label="Total budget" className="mt-2 w-full accent-rani-600" />
+              <input type="range" style={{ height: 44 }} min={20000} max={600000} step={5000} value={f.budget} onChange={(e) => set('budget', Number(e.target.value))} aria-label="Total budget" className="mt-2 w-full accent-rani-600" />
               <span className="block text-sm font-normal text-stone-500">≈ {inr(f.budget / Math.max(1, travelers) / Math.max(1, f.days))} per person per day for {travelers} {travelers === 1 ? 'person' : 'people'}</span>
             </div>
           </>
@@ -219,7 +224,7 @@ export default function Personalize() {
         )}
       </div>
 
-      <div className="sticky bottom-[calc(80px+env(safe-area-inset-bottom))] z-10 -mx-4 mt-6 grid grid-cols-[auto_1fr] gap-2 bg-gradient-to-t from-sand-50 from-70% to-sand-50/0 px-4 pb-2 pt-6 md:-mx-6 md:px-6">
+      <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-10 -mx-5 lg:bottom-0 mt-6 grid grid-cols-[auto_1fr] gap-2 bg-gradient-to-t from-sand-50 from-70% to-sand-50/0 px-4 pb-2 pt-6 md:-mx-6 md:px-6">
         {step > 0 ? <Button type="button" variant="secondary" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
         {last
           ? <Button key="build" type="button" onClick={build} disabled={busy || !f.interests.length || !travelers}>{busy ? 'Predicting what everyone will enjoy…' : 'Build our tour'}</Button>
@@ -231,5 +236,7 @@ export default function Personalize() {
         )}
       </div>
     </form>
+    </PageBody>
+    </div>
   )
 }

@@ -8,6 +8,7 @@ import Considered from '../components/Considered'
 import { GroupFairness } from '../components/group'
 import { Bar, Button, Card, Empty, JourneyStrip, PACE_LABEL, Photo, Spinner, TIER_LABEL, cx } from '../components/ui'
 import { destImage } from '../media'
+import { PageBody, PageHero } from '../components/page'
 import { buildTripMap } from '../lib/tripMap'
 
 const RouteMap = lazy(() => import('../components/RouteMap'))
@@ -77,19 +78,19 @@ export default function Plan() {
 
   return (
     <div>
-      <header className="pt-safe px-5 pt-6 pb-4 md:px-6">
-        <p className="text-sm font-bold uppercase tracking-[0.16em] text-rani-600">{draft ? 'Draft plan' : 'Booked'} · {tour.code}</p>
-        <h1 className="mt-1 text-[2.25rem] font-extrabold leading-[1.05] text-ink">{tour.title}</h1>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {[[CalendarDays, `${fmtDate(tour.start_date)} – ${fmtDate(tour.end_date)}`], [Users, `${tour.group.adults + (tour.group.children || 0)} travelers`],
+      <PageHero size="md" img={destImage(tour.route[0]?.dest)} eyebrow={`${draft ? 'Draft plan' : 'Booked'} · ${tour.code}`} title={tour.title}>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {[[CalendarDays, `${fmtDate(tour.start_date)} to ${fmtDate(tour.end_date)}`], [Users, `${tour.group.adults + (tour.group.children || 0)} travelers`],
             [BedDouble, `${TIER_LABEL[tour.prefs.hotel_tier]} stays`], [Gauge, `${PACE_LABEL[tour.prefs.pace]} pace`]].map(([Icon, t]) => (
-            <span key={t} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-semibold text-ink shadow-soft"><Icon size={16} aria-hidden /> {t}</span>
+            <span key={t} className="glass-dark inline-flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold text-white"><Icon size={16} aria-hidden /> {t}</span>
           ))}
         </div>
-      </header>
-      <JourneyStrip stage={tour.stage} />
+      </PageHero>
+      <PageBody>
+      <div className="mb-5"><JourneyStrip stage={tour.stage} /></div>
 
-      <section className="space-y-5 px-5 pt-5 md:px-6">
+      <div className="lg:grid lg:grid-cols-[1fr_1.1fr] lg:items-start lg:gap-10 [&>*]:min-w-0">
+      <section className="space-y-5 lg:sticky lg:top-24">
         {/* Route as a story: map + stop cards */}
         <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
           <Suspense fallback={<div className="h-64 animate-pulse bg-stone-200" />}>
@@ -108,13 +109,13 @@ export default function Plan() {
           </ol>
         </div>
 
-        <Card className="p-3">
+        <Card className="p-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-base">
               <Wallet size={16} className="text-rani-600" />
               <span><b>{inr(p.total)}</b> {p.budget ? <>of <b>{inr(p.budget)}</b></> : ''}</span>
             </div>
-            <Link to="/price" className="text-xs font-semibold text-rani-600">Breakdown</Link>
+            <Link to="/price" className="-my-2 inline-flex min-h-11 items-center text-sm font-semibold text-rani-600">Breakdown</Link>
           </div>
           {p.budget > 0 && <Bar value={p.total} max={p.budget} tone={p.within_budget ? 'green' : 'red'} className="mt-2" />}
           <div className="mt-1.5 flex justify-between text-xs text-stone-500">
@@ -133,7 +134,7 @@ export default function Plan() {
 
         {tour.notes.length > 0 && (
           <Card className="bg-amber-50/60 p-3 ring-amber-200">
-            <button onClick={() => setShowNotes((s) => !s)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-amber-800">
+            <button type="button" onClick={() => setShowNotes((s) => !s)} className="flex min-h-11 w-full items-center justify-between text-sm font-semibold uppercase tracking-wide text-amber-800">
               <span className="inline-flex items-center gap-1.5"><Lightbulb size={14} /> How we optimised this</span>
               <ChevronDown size={15} className={cx('transition', showNotes && 'rotate-180')} />
             </button>
@@ -152,8 +153,10 @@ export default function Plan() {
           </Card>
         )}
 
+      </section>
+      <section className="mt-6 space-y-5 lg:mt-0">
         <div className="flex items-center justify-between pt-1">
-          <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Day by day</div>
+          <h2 className="text-2xl font-bold text-ink">Day by day</h2>
           {!draft && <button onClick={() => setHistory((h) => !h)} className="text-xs text-stone-500 underline">{history ? 'Hide' : 'Show'} change history</button>}
         </div>
         <div className="space-y-5">
@@ -166,8 +169,10 @@ export default function Plan() {
 
         <div className="pt-4"><Considered tour={tour} editable={editable} onChanged={refresh} /></div>
       </section>
+      </div>
+      </PageBody>
 
-      <div className="sticky bottom-16 z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-4 pb-3 pt-4">
+      <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-5 pb-3 pt-4 lg:bottom-0 lg:mx-auto lg:max-w-md lg:bg-none">
         {draft ? (
           <Button className="w-full" disabled={busy} onClick={() => nav('/price')}>
             {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? 's' : ''} to book` : `Review price & book · ${inr(p.total)}`}

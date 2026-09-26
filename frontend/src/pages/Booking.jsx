@@ -3,15 +3,18 @@ import { CheckCheck, Phone, Ticket } from 'lucide-react'
 import { inr } from '../api'
 import { useTour } from '../store'
 import { Button, Card } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 
 export default function Booking() {
   const booking = useLocation().state?.booking
   const { tour } = useTour()
   if (!booking) return <div className="p-6 text-sm text-stone-500">No booking to show. <Link className="underline" to="/">Back</Link></div>
   return (
-    <div className="px-4 pt-8 text-center">
+    <div>
+      <PageHero size="sm" img={destImage(tour?.route?.[0]?.dest)} eyebrow="All set" title="Your trip is booked" />
+      <PageBody width="narrow" className="text-center">
       <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600"><CheckCheck size={32} /></div>
-      <h1 className="mt-3 text-2xl font-bold">Your tour is booked!</h1>
       <p className="text-sm text-stone-500">{booking.refs.length} components booked with {new Set(booking.refs.map((r) => r.vendor)).size} vendors. They’ll confirm each one, you’ll see ✓ as they do.</p>
       {tour?.coordinator && (
         <Card className="mt-4 flex items-center justify-between p-3 text-left">
@@ -43,6 +46,7 @@ export default function Booking() {
         <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">Demo · no payment taken</span>
       </Card>
       <Link to="/trip"><Button className="mt-5 w-full">Prepare for your trip</Button></Link>
+      </PageBody>
     </div>
   )
 }

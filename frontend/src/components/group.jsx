@@ -44,13 +44,13 @@ export function FitChips({ members, className }) {
       <div className="flex flex-wrap items-center gap-1.5">
         {members.map((m) => (
           <span key={m.name} className={cx('inline-flex items-center gap-1 rounded-full py-0.5 pl-0.5 pr-2 text-xs font-semibold ring-1', m.veto ? TONE.stone : TONE[fitTone(m.fit)])}>
-            <Avatar name={m.name} age={m.age} tone={m.veto ? 'stone' : fitTone(m.fit)} size="h-5 w-5 text-[10px]" />
+            <Avatar name={m.name} age={m.age} tone={m.veto ? 'stone' : fitTone(m.fit)} size="h-5 w-5 text-xs" />
             {m.name} {m.age} · {m.veto ? 'not for them' : `${m.fit}%`}{m.fit >= 85 && !m.veto ? ' ★' : ''}
           </span>
         ))}
         {why && (
           <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
-            className="inline-flex min-h-7 items-center gap-0.5 rounded-full px-1.5 text-xs font-semibold text-rani-600 hover:underline">
+            className="inline-flex min-h-11 min-w-11 items-center justify-center gap-0.5 rounded-full px-2 text-sm font-semibold text-rani-600 hover:underline">
             Why <ChevronDown size={13} className={cx('transition', open && 'rotate-180')} aria-hidden />
           </button>
         )}
@@ -84,7 +84,7 @@ export function TagList({ tags, onAction, busy }) {
           const I = TAG_ICON[t.key] || Info
           return (
             <button type="button" key={t.key} onClick={() => setOpen(open === t.key ? null : t.key)} aria-expanded={open === t.key}
-              className={cx('inline-flex min-h-7 items-center gap-1 rounded-full px-2.5 text-xs font-semibold', TAG_TONE[t.tone] || TAG_TONE.blue,
+              className={cx('inline-flex min-h-11 items-center gap-1 rounded-full px-3.5 text-sm font-semibold', TAG_TONE[t.tone] || TAG_TONE.blue,
                 t.action && 'ring-1 ring-current/20')}>
               <I size={12} aria-hidden /> {t.label}{t.action ? ' · tip' : ''}
             </button>
@@ -92,7 +92,7 @@ export function TagList({ tags, onAction, busy }) {
         })}
       </div>
       {tags.filter((t) => t.key === open).map((t) => (
-        <div key={t.key} className={cx('animate-fade mt-2 rounded-2xl p-3 text-xs leading-relaxed', TAG_TONE[t.tone] || TAG_TONE.blue)}>
+        <div key={t.key} className={cx('animate-fade mt-2 rounded-2xl p-3 text-sm leading-relaxed', TAG_TONE[t.tone] || TAG_TONE.blue)}>
           {t.comment}
           {t.action && onAction && (
             <button type="button" disabled={busy} onClick={() => onAction(t.action)}

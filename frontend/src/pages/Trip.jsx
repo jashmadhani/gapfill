@@ -9,6 +9,7 @@ import DayTimeline, { VENDOR_CHIP, useTagAction } from '../components/DayTimelin
 import { MOOD } from '../components/group'
 import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Sheet, Spinner, StartTripButton, cx } from '../components/ui'
 import { destImage } from '../media'
+import { PageBody, PageHero } from '../components/page'
 import { buildTripMap } from '../lib/tripMap'
 
 const RouteMap = lazy(() => import('../components/RouteMap'))
@@ -117,7 +118,7 @@ function ReportChange({ tour, today, fire, busy }) {
         {view === 'budget' && (
           <div className="space-y-4">
             <div className="text-center"><div className="font-display text-4xl">{inr(budget)}</div><div className="text-sm text-stone-500">currently {inr(total)}</div></div>
-            <input type="range" min={Math.round(total * 0.5)} max={Math.round(total * 1.3)} step={1000} value={budget} onChange={(e) => setBudget(Number(e.target.value))}
+            <input type="range" style={{ height: 44 }} min={Math.round(total * 0.5)} max={Math.round(total * 1.3)} step={1000} value={budget} onChange={(e) => setBudget(Number(e.target.value))}
               aria-label="New budget" className="w-full accent-rani-600" />
             <div className="grid grid-cols-3 gap-2">
               {[[-0.1, '−10%'], [-0.2, '−20%'], [0.1, '+10%']].map(([f, l]) => (
@@ -173,11 +174,12 @@ function Operate({ tour, state, onFix }) {
   const model = buildTripMap({ tour, state, cities, events })
   const selAct = sel?.type === 'activity' ? model.today.find((a) => a.id === sel.id) : null
   return (
-    <>
+    <div className="grid gap-5 lg:grid-cols-[1.05fr_1fr] lg:items-start [&>*]:min-w-0">
+      <div className="space-y-5">
       {hero ? (
         <Link to={hero.kind === 'activity' && hero.offering_id ? `/experience/${hero.offering_id}` : '#timeline'} className="block">
-          <Photo src={destImage(hero.dest_key || hero.dest_name)} alt={hero.dest_name} scrim="both" className="rounded-[2.25rem] shadow-float">
-            <div className="flex min-h-[18rem] flex-col justify-between p-5 text-white">
+          <div className="rounded-[2.25rem] bg-ink shadow-float">
+            <div className="flex min-h-[15rem] flex-col justify-between p-5 text-white">
               <div className="flex items-center justify-between">
                 <span className={cx('rounded-full px-3 py-1.5 text-sm font-bold', current ? 'bg-white text-ink' : 'glass text-ink')}>{current ? 'Happening now' : `In ${Math.max(0, hero.start_min - now)} min`}</span>
                 {hero.booking_ref && <span className="glass-dark inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 font-mono text-sm"><Ticket size={14} aria-hidden /> {hero.booking_ref}</span>}
@@ -188,7 +190,7 @@ function Operate({ tour, state, onFix }) {
                 <p className="mt-1 text-[15px] text-white/85">{hero.vendor_name}</p>
               </div>
             </div>
-          </Photo>
+          </div>
         </Link>
       ) : <Empty title="You’re done for today">Rest up, tomorrow is ready below.</Empty>}
 
@@ -219,6 +221,8 @@ function Operate({ tour, state, onFix }) {
         </div>
       </section>
 
+      </div>
+      <div className="space-y-5 lg:sticky lg:top-24">
       <div id="timeline"><DayTimeline d={today} title="Today" editable now={now} risks={tour.risks} onAction={onTag} busy={tagBusy} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} /></div>
 
       <ReportChange tour={tour} today={today} fire={fire} busy={busy} />
@@ -235,7 +239,8 @@ function Operate({ tour, state, onFix }) {
       )}
       <Coordinator c={tour.coordinator} />
       <Changes tour={tour} />
-    </>
+      </div>
+    </div>
   )
 }
 
@@ -319,11 +324,37 @@ function Prepare({ tour, state, onFix }) {
   )
 }
 
+// The whole route on real roads, for every stage before and after the trip.
+function RouteCard({ tour, state }) {
+  const { events } = useTour()
+  const [sel, setSel] = useState(null)
+  const cities = Object.fromEntries((state.destinations || []).map((d) => [d.key, d]))
+  const model = buildTripMap({ tour, state, cities, events })
+  const stop = sel?.type === 'city' ? model.stops.find((x) => x.key === sel.key) : null
+  return (
+    <section aria-labelledby="route-h">
+      <h2 id="route-h" className="mb-3 text-2xl font-bold text-ink">Your route</h2>
+      <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
+        <Suspense fallback={<div className="h-80 animate-pulse bg-stone-200" />}>
+          <RouteMap model={model} selected={sel} onSelect={setSel} className="h-80 lg:h-[26rem]" />
+        </Suspense>
+        {stop && (
+          <Link to={`/destination/${stop.key}`} className="animate-fade flex items-center gap-4 p-3 pr-5">
+            <Photo src={destImage(stop.key)} scrim={false} className="h-16 w-16 shrink-0 rounded-2xl" />
+            <span className="min-w-0 flex-1"><span className="block truncate text-lg font-bold text-ink">{stop.order}. {stop.name}</span><span className="text-[15px] text-stone-600">{stop.nights} night{stop.nights === 1 ? '' : 's'} · from day {stop.first_day}</span></span>
+            <ArrowUpRight size={20} aria-hidden />
+          </Link>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export default function Trip() {
   const { tour, state, notify } = useTour()
   const nav = useNavigate()
   if (!state) return <Spinner />
-  if (!tour) return <div className="px-4 pt-5"><Empty title="No tour yet" action={<Link to="/personalize"><Button>Design a tour</Button></Link>}>Your trip hub appears once you book.</Empty></div>
+  if (!tour) return <div className="px-4 pt-5"><Empty title="No tour yet" action={<Link to="/personalize" className="inline-block"><Button>Design a tour</Button></Link>}>Your trip hub appears once you book.</Empty></div>
 
   const onFix = async (r) => {
     if (r.kind === 'weather') {
@@ -342,13 +373,15 @@ export default function Trip() {
   const title = { plan: 'Not booked yet', prepare: 'Get ready', operate: `Day ${tour.current_day} of ${tour.days}`, complete: 'Welcome home', review: 'Thanks for travelling' }[tour.stage]
   return (
     <div>
-      <header className="pt-safe px-5 pt-6 pb-4 md:px-6">
-        <p className="text-sm font-bold uppercase tracking-[0.16em] text-rani-600">{fmtDate(state.demo_date, { weekday: 'short', day: 'numeric', month: 'short' })} · {fmtTime(state.demo_time)}</p>
-        <h1 className="mt-1 text-[2.25rem] font-extrabold leading-[1.05] text-ink">{tour.stage === 'operate' ? `Day ${tour.current_day} in ${tour.days_detail[tour.current_day - 1].dest_name}` : title}</h1>
-      </header>
-      <JourneyStrip stage={tour.stage} day={tour.current_day} days={tour.days} hideAction />
-      <section className="space-y-5 px-5 pt-5 md:px-6">
-        {tour.stage === 'plan' && <Empty title="Your plan isn't booked yet" action={<Link to="/price"><Button>Review price & book</Button></Link>}>Once booked, this becomes your live trip hub: vouchers, checklist, alerts and replanning.</Empty>}
+      <PageHero size="md" img={destImage(tour.stage === 'operate' ? tour.days_detail[tour.current_day - 1].dest : tour.route[0]?.dest)}
+        eyebrow={`${fmtDate(state.demo_date, { weekday: 'short', day: 'numeric', month: 'short' })} · ${fmtTime(state.demo_time)}`}
+        title={tour.stage === 'operate' ? `Day ${tour.current_day} in ${tour.days_detail[tour.current_day - 1].dest_name}` : title}
+        subtitle={tour.title} />
+      <PageBody>
+      <div className="mb-5"><JourneyStrip stage={tour.stage} day={tour.current_day} days={tour.days} hideAction /></div>
+      <section className="space-y-5">
+        {tour.stage !== 'operate' && <RouteCard tour={tour} state={state} />}
+        {tour.stage === 'plan' && <Empty title="Your plan isn't booked yet" action={<Link to="/price" className="inline-block"><Button>Review price & book</Button></Link>}>Once booked, this becomes your live trip hub: vouchers, checklist, alerts and replanning.</Empty>}
         {tour.stage === 'prepare' && <Prepare tour={tour} state={state} onFix={onFix} />}
         {tour.stage === 'operate' && <Operate tour={tour} state={state} onFix={onFix} />}
         {tour.stage === 'complete' && (
@@ -357,7 +390,7 @@ export default function Trip() {
               <CircleCheck className="mx-auto text-emerald-600" size={32} />
               <h2 className="mt-2 font-semibold">{tour.days} days · {tour.route.length} cities · {tour.days_detail.flatMap((d) => d.items).filter((i) => live(i) && i.kind === 'activity').length} experiences</h2>
               <p className="mt-1 text-sm text-stone-500">How was it? Your ratings help us and our local partners improve.</p>
-              <Link to="/review"><Button className="mt-3 w-full"><Star size={15} /> Rate your tour</Button></Link>
+              <Link to="/review" className="inline-block"><Button className="mt-3 w-full"><Star size={15} /> Rate your tour</Button></Link>
             </Card>
             <Changes tour={tour} />
           </>
@@ -366,10 +399,11 @@ export default function Trip() {
           <Card className="p-5 text-center">
             <div className="flex justify-center">{Array.from({ length: 5 }, (_, i) => <Star key={i} size={22} className={i < (tour.review?.overall || 0) ? 'fill-amber-400 text-amber-400' : 'text-stone-300'} />)}</div>
             <p className="mt-2 text-sm text-stone-600">“{tour.review?.text || 'Thank you!'}”</p>
-            <Link to="/personalize"><Button className="mt-3 w-full">Plan your next tour</Button></Link>
+            <Link to="/personalize" className="inline-block"><Button className="mt-3 w-full">Plan your next tour</Button></Link>
           </Card>
         )}
       </section>
+      </PageBody>
     </div>
   )
 }

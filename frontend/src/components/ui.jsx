@@ -173,7 +173,7 @@ export function JourneyStrip({ stage, day, days, hideAction = false }) {
   const [label, action, to] = NEXT_STEP[stage] || ['Discover', 'Design your tour', '/personalize']
   const pct = Math.round(((at + 1) / JOURNEY.length) * 100)
   return (
-    <div className="flex items-center gap-3 px-4 md:px-6">
+    <div className="flex items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2 text-sm">
           <span className="truncate font-semibold text-stone-900">{label}{day ? ` · day ${day} of ${days}` : ''}</span>

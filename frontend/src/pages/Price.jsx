@@ -4,6 +4,8 @@ import { BedDouble, Car, CircleAlert, Receipt, ShieldCheck, Sparkles } from 'luc
 import { api, inr } from '../api'
 import { useTour } from '../store'
 import { Bar, Button, Card, Chip, Empty, JourneyStrip, Segmented, Spinner, cx } from '../components/ui'
+import { PageBody, PageHero } from '../components/page'
+import { destImage } from '../media'
 
 const CATS = [['stays', 'Stays', BedDouble], ['transport', 'Transfers', Car], ['experiences', 'Experiences', Sparkles], ['fees', 'Change fees', Receipt]]
 
@@ -37,11 +39,9 @@ export default function Price() {
 
   return (
     <div>
-      <header className="px-4 pt-5 pb-3">
-        <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{draft ? 'Price & book' : 'Payments'}</div>
-        <h1 className="text-2xl font-bold tracking-tight">{inr(p.total)}</h1>
-        <p className="text-sm text-stone-500">{inr(p.per_person)} per person · {tour.travelers} traveler{tour.travelers > 1 ? 's' : ''} · {tour.days} days</p>
-      </header>
+      <PageHero size="sm" img={destImage(tour.route[0]?.dest)} eyebrow={draft ? 'Price & book' : 'Payments'} title={inr(p.total)}
+        subtitle={`${inr(p.per_person)} per person · ${tour.travelers} traveler${tour.travelers > 1 ? 's' : ''} · ${tour.days} days`} />
+      <PageBody width="narrow">
       <JourneyStrip stage={draft ? 'plan' : tour.stage} hideAction />
 
       <section className="space-y-3 px-4 pt-4">
@@ -62,7 +62,7 @@ export default function Price() {
               <Bar value={p.total} max={p.budget} tone={p.within_budget ? 'green' : 'red'} />
               <div className={cx('mt-1 text-xs', p.within_budget ? 'text-emerald-700' : 'text-red-600')}>
                 {p.within_budget ? `Within your ${inr(p.budget)} budget, ${inr(p.budget - p.total)} to spare` : `${inr(p.over_by)} over your ${inr(p.budget)} budget`}
-                {!p.within_budget && draft && <> · <Link to="/plan" className="underline">optimise</Link></>}
+                {!p.within_budget && draft && <> · <Link to="/plan" className="-my-3 inline-flex min-h-11 items-center font-semibold underline">optimise</Link></>}
               </div>
             </div>
           )}
@@ -114,6 +114,7 @@ export default function Price() {
           </Card>
         )}
       </section>
+      </PageBody>
     </div>
   )
 }
