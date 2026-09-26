@@ -41,7 +41,7 @@ export function PageHero({ img, eyebrow, title, subtitle, children, size = 'md',
 // The rounded content sheet that overlaps the hero on phones; a centred page column on the web.
 export function PageBody({ children, className, width = 'wide' }) {
   return (
-    <div className="page-sheet relative z-10 -mt-7 overflow-hidden rounded-t-[1.9rem] lg:mt-0 lg:rounded-none">
+    <div className="app-canvas relative z-10 -mt-7 min-h-[40dvh] overflow-hidden rounded-t-[1.9rem] lg:mt-0 lg:rounded-none">
       <div className="page-sheet-glow" aria-hidden />
       <div className={cx('relative mx-auto px-5 pt-6 pb-6 md:px-8 lg:pt-8', width === 'wide' ? 'max-w-6xl' : 'max-w-3xl', className)}>{children}</div>
     </div>

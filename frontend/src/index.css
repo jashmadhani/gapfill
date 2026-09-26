@@ -58,12 +58,22 @@
 }
 
 html, body, #root { min-height: 100%; }
-/* Content sheet: a slow blue-to-blue drift instead of one flat fill, plus a soft glow
-   at the top where it meets the hero photo. Stays inside the sand family, no new hue. */
-.page-sheet { background: linear-gradient(180deg, var(--color-sand-50) 0%, var(--color-sand-100) 100%); }
+/* Shared canvas: layered, off-centre blue blobs instead of one flat fill or a plain
+   two-stop ramp. `background-attachment: fixed` pins it to the viewport, so the body
+   (behind short content) and the page sheet (however tall it grows) sample the exact
+   same pixels — no seam where one div ends and the other shows through underneath. */
+.app-canvas {
+  background-color: var(--color-sand-50);
+  background-attachment: fixed;
+  background-image:
+    radial-gradient(46rem 34rem at 10% -8%, color-mix(in oklab, var(--color-rani-200) 50%, transparent) 0%, transparent 62%),
+    radial-gradient(40rem 32rem at 108% 22%, color-mix(in oklab, var(--color-sky-50) 85%, transparent) 0%, transparent 65%),
+    radial-gradient(52rem 40rem at 55% 115%, color-mix(in oklab, var(--color-rani-100) 60%, transparent) 0%, transparent 68%),
+    linear-gradient(180deg, var(--color-sand-50) 0%, var(--color-sand-100) 100%);
+}
 .page-sheet-glow {
   position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: radial-gradient(52rem 16rem at 50% 0%, color-mix(in oklab, var(--color-rani-100) 55%, transparent) 0%, transparent 70%);
+  background: radial-gradient(52rem 16rem at 50% 0%, color-mix(in oklab, white 45%, transparent) 0%, transparent 70%);
 }
 
 /* Floating bottom tab bar: subtle glassmorphism, a cylinder rather than a flush box. */
@@ -83,7 +93,6 @@ html, body, #root { min-height: 100%; }
 .caption { font-weight: 500; font-size: 0.8125rem; line-height: 1.35; letter-spacing: 0.01em; }
 .btn-label { font-weight: 700; font-size: clamp(0.9375rem, 0.9rem + 0.15vw, 1rem); line-height: 1; }
 body {
-  background: var(--color-sand-50);
   color: var(--color-stone-900);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
