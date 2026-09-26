@@ -229,3 +229,57 @@ class Feedback(Base):
     signal: Mapped[str] = mapped_column(String(16))  # review | added | swap_in | swap_out | removed
     features: Mapped[list] = mapped_column(JSON, default=list)  # the exact model input at the time
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class PaymentIntent(Base):
+    """A money-moving action waiting for the traveler. Nothing is charged, refunded or rebooked until the traveler
+    approves this exact amount and (if money is due) pays on the provider's own checkout page."""
+    __tablename__ = "payment_intents"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    public_id: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    tour_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # booking | balance | change
+    action: Mapped[dict] = mapped_column(JSON)  # what to execute once paid
+    summary: Mapped[dict] = mapped_column(JSON)  # what the traveler sees: title, lines, policy
+    amount: Mapped[float] = mapped_column(Float, default=0)  # charged now
+    refund: Mapped[float] = mapped_column(Float, default=0)  # returned to the original payment method
+    fees: Mapped[float] = mapped_column(Float, default=0)
+    cart_hash: Mapped[str] = mapped_column(String(64))  # the exact plan + amounts approved
+    status: Mapped[str] = mapped_column(String(20), default="proposed")
+    # proposed -> awaiting_payment -> executed | declined | cancelled | expired | stale | failed
+    created_by: Mapped[str] = mapped_column(String(16), default="traveler")  # traveler | agent | operator
+    provider: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    provider_order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_payment_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Ticket(Base):
+    """One e-ticket / voucher per booked component. Voided (never deleted) when the booking changes."""
+    __tablename__ = "tickets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(24), unique=True, index=True)
+    tour_id: Mapped[int] = mapped_column(Integer, index=True)
+    item_id: Mapped[int] = mapped_column(Integer, index=True)
+    status: Mapped[str] = mapped_column(String(12), default="valid")  # valid | void
+    signature: Mapped[str] = mapped_column(String(64))
+    void_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AgentAudit(Base):
+    """Every agent tool call and every payment decision, for the operator's audit view."""
+    __tablename__ = "agent_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    actor: Mapped[str] = mapped_column(String(16))  # agent | traveler | operator | provider | system
+    action: Mapped[str] = mapped_column(String(40))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    outcome: Mapped[str] = mapped_column(String(16), default="ok")  # ok | blocked | error
+    intent_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

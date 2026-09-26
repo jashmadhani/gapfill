@@ -18,8 +18,8 @@ async def _ctx_items(db, tour):
     return st, ctx_for(tour, st), rows, [item_dict(r) for r in rows]
 
 
-async def swap(db, tour: Tour, item_id: int, offering_id: int | None = None, mode: str | None = None) -> dict:
-    st, ctx, rows, items = await _ctx_items(db, tour)
+def plan_swap(st, ctx, rows, items, tour: Tour, item_id: int, offering_id: int | None = None, mode: str | None = None) -> list:
+    """Work out a swap without touching the database: returns the plan changes ([{"op": "replace", ...}])."""
     row = next((r for r in rows if r.id == item_id), None)
     if not row or not P.live(item_dict(row)):
         raise CustomizeError("That item is no longer in the plan.")
@@ -40,8 +40,6 @@ async def swap(db, tour: Tour, item_id: int, offering_id: int | None = None, mod
             new = P.activity_item(o, row.day, slot[0], ctx, who, keep)
         else:
             new = P.activity_item(alt["offering"], row.day, alt["start_min"], ctx, who, keep)
-        log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.5, "swap_out", P.item_members(it, ctx))
-        log_feedback(db, tour, ctx, new["offering_id"], new["day"], new["start_min"], 4.0, "swap_in", P.item_members(new, ctx))
     elif row.kind == "hotel":
         h = P.off(offering_id)
         if not h or h["kind"] != "hotel":
@@ -54,18 +52,11 @@ async def swap(db, tour: Tour, item_id: int, offering_id: int | None = None, mod
         new = P.transport_item(q, row.day, row.from_key, row.dest_key, it["meta"].get("phase", "between"))
     else:
         raise CustomizeError("This item can't be swapped.")
-    booked = tour.status == "booked"
-    fee = 0
-    if booked:
-        fee = await retire_row(db, tour, row, st, "traveler", "replaced", "traveler swap")
-    else:
-        await db.delete(row)
-    nr = await new_row(db, tour, new, booked)
-    return {"item_id": nr.id, "title": nr.title, "fee": fee, "booking_ref": nr.booking_ref}
+    return [{"op": "replace", "item_id": row.id, "new": new, "text": f"{row.title} → {new['title']}"}]
 
 
-async def add(db, tour: Tour, offering_id: int, day: int | None = None) -> dict:
-    st, ctx, rows, items = await _ctx_items(db, tour)
+def plan_add(st, ctx, items, tour: Tour, offering_id: int, day: int | None = None) -> list:
+    """Find the first day and free slot for an experience; returns [{"op": "add", ...}] or raises CustomizeError."""
     o = P.off(offering_id)
     if not o or o["kind"] != "activity":
         raise CustomizeError("Unknown experience.")
@@ -88,21 +79,54 @@ async def add(db, tour: Tour, offering_id: int, day: int | None = None) -> dict:
         if not slot:
             reasons.append(f"day {d} is full")
             continue
-        nr = await new_row(db, tour, P.activity_item(o, d, slot[0], ctx), tour.status == "booked")
-        log_feedback(db, tour, ctx, o["id"], d, slot[0], 4.0, "added")
-        return {"item_id": nr.id, "day": d, "start_label": P.label(slot[0]), "title": o["title"], "booking_ref": nr.booking_ref}
-    if not day and all("is in" in r for r in reasons):
+        new = P.activity_item(o, d, slot[0], ctx)
+        return [{"op": "add", "new": new, "text": f"Add {o['title']} on day {d} at {P.label(slot[0])}"}]
+    if not day and reasons and all("is in" in r for r in reasons):
         raise CustomizeError(f"{o['title']} is in {P.W['dests'][o['dest_key']]['name']}, which isn't on your route.")
-    raise CustomizeError(f"Couldn't fit {o['title']}: " + "; ".join(reasons[:3]) + ".")
+    raise CustomizeError(f"Couldn't fit {o['title']}: " + ("; ".join(reasons[:3]) or "no days left") + ".")
+
+
+def plan_remove(rows, tour: Tour, item_id: int) -> list:
+    row = next((r for r in rows if r.id == item_id), None)
+    if not row or not P.live(item_dict(row)):
+        raise CustomizeError("Unknown item.")
+    if row.kind in ("hotel", "transport") and tour.status == "draft":
+        raise CustomizeError("Stays and transfers hold the route together, swap them instead of removing.")
+    return [{"op": "remove", "item_id": row.id, "text": f"Remove {row.title}"}]
+
+
+async def swap(db, tour: Tour, item_id: int, offering_id: int | None = None, mode: str | None = None) -> dict:
+    st, ctx, rows, items = await _ctx_items(db, tour)
+    change = plan_swap(st, ctx, rows, items, tour, item_id, offering_id, mode)[0]
+    row = next(r for r in rows if r.id == item_id)
+    new = change["new"]
+    if row.kind == "activity":
+        it = item_dict(row)
+        log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.5, "swap_out", P.item_members(it, ctx))
+        log_feedback(db, tour, ctx, new["offering_id"], new["day"], new["start_min"], 4.0, "swap_in", P.item_members(new, ctx))
+    booked = tour.status == "booked"
+    fee = 0
+    if booked:
+        fee = await retire_row(db, tour, row, st, "traveler", "replaced", "traveler swap")
+    else:
+        await db.delete(row)
+    nr = await new_row(db, tour, new, booked)
+    return {"item_id": nr.id, "title": nr.title, "fee": fee, "booking_ref": nr.booking_ref}
+
+
+async def add(db, tour: Tour, offering_id: int, day: int | None = None) -> dict:
+    st, ctx, rows, items = await _ctx_items(db, tour)
+    new = plan_add(st, ctx, items, tour, offering_id, day)[0]["new"]
+    nr = await new_row(db, tour, new, tour.status == "booked")
+    log_feedback(db, tour, ctx, new["offering_id"], new["day"], new["start_min"], 4.0, "added")
+    return {"item_id": nr.id, "day": new["day"], "start_label": P.label(new["start_min"]), "title": new["title"], "booking_ref": nr.booking_ref}
 
 
 async def remove(db, tour: Tour, item_id: int) -> dict:
     st = await get_state(db)
-    row = await db.get(TourItem, item_id)
-    if not row or row.tour_id != tour.id:
-        raise CustomizeError("Unknown item.")
-    if row.kind in ("hotel", "transport") and tour.status == "draft":
-        raise CustomizeError("Stays and transfers hold the route together, swap them instead of removing.")
+    rows = await load_items(db, tour.id)
+    plan_remove(rows, tour, item_id)
+    row = next(r for r in rows if r.id == item_id)
     if row.kind == "activity" and row.offering_id:
         ctx = ctx_for(tour, st)
         log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.0, "removed", P.item_members(item_dict(row), ctx))

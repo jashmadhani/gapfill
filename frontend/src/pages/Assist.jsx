@@ -1,23 +1,42 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bot, Send } from 'lucide-react'
+import { Ban, Bot, FileCheck2, Search, Send, ShieldCheck, Zap } from 'lucide-react'
 import { api } from '../api'
 import { useTour } from '../store'
 import { Button, Empty, Spinner, cx } from '../components/ui'
 import { PageBody, PageHero } from '../components/page'
 import { destImage } from '../media'
+import { ApprovalCard } from '../components/ApprovalSheet'
 
 const SUGGEST = {
-  plan: ['Show day 2', 'Add a cooking class', 'Cheaper hotel', 'How much is it?'],
-  prepare: ['How much have I paid?', 'Show day 1', 'Upgrade my hotel', 'Call my coordinator'],
-  operate: ["What's next today?", 'Add something foodie tomorrow', "I'm running 30 min late", "It's raining", 'Make tomorrow lighter', 'Call my coordinator'],
+  plan: ['Book it with the 30% deposit', 'Add a cooking class', 'Cheaper hotel', 'How much is it?'],
+  prepare: ['Pay the balance', 'Show my tickets', 'Upgrade my hotel', 'What’s the cancellation policy for the food trail?'],
+  operate: ["What's next today?", 'Add something foodie tomorrow', 'Go with the recommended option', "I'm running 30 min late", 'Show my tickets', 'Skip the zipline'],
   complete: ['How much did I spend?'],
   review: ['How much did I spend?'],
 }
 
-// Assist: a conversational layer over the same planning engine, it can read, change and replan the tour.
+const STEP = { read: Search, action: Zap, propose: FileCheck2 }
+
+// What the agent actually did for this reply, including anything the gateway blocked.
+function Trace({ steps, mode }) {
+  return (
+    <details className="mt-2 text-xs text-stone-500">
+      <summary className="cursor-pointer select-none font-semibold">{steps.length} step{steps.length > 1 ? 's' : ''} · {mode}</summary>
+      <ul className="mt-1 space-y-0.5">
+        {steps.map((t, k) => {
+          const I = t.ok ? STEP[t.kind] || Search : Ban
+          return <li key={k} className={cx('flex items-center gap-1.5', !t.ok && 'text-red-600')}><I size={12} aria-hidden /> <span className="font-mono">{t.tool}</span>{!t.ok && ' — blocked'}</li>
+        })}
+      </ul>
+    </details>
+  )
+}
+
+// Assist: the booking & ticketing agent. It reads, searches and prepares; the traveler approves every payment.
 export default function Assist() {
-  const { tour, state, refresh, notify } = useTour()
+  const { tour, state, refresh, notify, approvals, upsertApproval } = useTour()
+  const live = (a) => approvals.find((x) => x.id === a.id) || a
   const [msgs, setMsgs] = useState(null)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -32,11 +51,14 @@ export default function Assist() {
     const t = (q ?? text).trim()
     if (!t || busy) return
     setText('')
-    setMsgs((m) => [...(m || []), { id: `u${Date.now()}`, role: 'user', text: t }])
+    const uid = `u${Date.now()}`
+    setMsgs((m) => [...(m || []), { id: uid, role: 'user', text: t }])
     setBusy(true)
     try {
       const r = await api.say(tour.id, t)
-      setMsgs((m) => [...m, { id: `a${Date.now()}`, role: 'assistant', text: r.reply }])
+      // Show what the server kept: card numbers / PINs are masked on screen too, not just in storage.
+      setMsgs((m) => [...m.map((x) => (x.id === uid && r.safe_text ? { ...x, text: r.safe_text } : x)), { id: `a${Date.now()}`, role: 'assistant', text: r.reply, data: r.data }])
+      r.data?.approvals?.forEach(upsertApproval)
       refresh()
     } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
   }
@@ -47,13 +69,19 @@ export default function Assist() {
       <PageBody width="narrow" className="flex-1">
       <div className="flex-1 space-y-2.5">
         {msgs === null && <Spinner />}
-        {msgs?.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-stone-600 ring-1 ring-stone-200">Hi! Ask me about your schedule, costs, or tell me what to change, I’ll update the plan and the bookings.</p>}
+        <p className="flex items-start gap-2 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
+          <ShieldCheck size={17} className="mt-0.5 shrink-0" aria-hidden />
+          <span>I can book, pay balances and make paid changes — but I only <b>prepare</b> them. You approve every payment yourself and pay on the provider’s page. Never share card numbers, PINs or OTPs here.</span>
+        </p>
+        {msgs?.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-stone-600 ring-1 ring-stone-200">Hi! Ask me about your schedule, costs, tickets, or tell me what to change.</p>}
         {msgs?.map((m) => (
-          <div key={m.id} className={cx('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
+          <div key={m.id} className={cx('flex flex-col', m.role === 'user' ? 'items-end' : 'items-start')}>
             <div className={cx('max-w-[85%] whitespace-pre-line rounded-[1.3rem] px-4 py-2.5 text-[16px] leading-snug shadow-soft',
               m.role === 'user' ? 'rounded-br-md bg-rani-600 text-white' : 'rounded-bl-md bg-white text-stone-800 ring-1 ring-stone-200')}>
               {m.text}
+              {m.data?.trace?.length > 0 && <Trace steps={m.data.trace} mode={m.data.mode} />}
             </div>
+            {m.data?.approvals?.map((a) => <div key={a.id} className="mt-2 w-full max-w-md"><ApprovalCard intent={live(a)} compact /></div>)}
           </div>
         ))}
         {busy && <div className="flex"><div className="rounded-2xl rounded-bl-md bg-white px-3 py-2 text-stone-400 ring-1 ring-stone-200">•••</div></div>}

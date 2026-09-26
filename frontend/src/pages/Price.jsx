@@ -26,14 +26,12 @@ export default function Price() {
   const book = async () => {
     setBusy(true)
     try {
-      const r = await api.book(tour.id, pay, method)
-      await refresh()
-      nav('/booking', { state: { booking: r } })
+      await api.book(tour.id, pay, method) // opens the approval card; booking happens only after you approve and pay
     } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
   }
   const payBalance = async () => {
     setBusy(true)
-    try { await api.pay(tour.id, { amount: tour.payments.balance, method, note: 'Balance' }); await refresh(); notify('Balance paid ✓', 'success') }
+    try { await api.payBalance(tour.id) } // approval card, then the provider's page
     catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
   }
 

@@ -12,20 +12,38 @@ export function TourProvider({ children }) {
   const [events, setEvents] = useState([]) // pending change cards for the active tour
   const [version, setVersion] = useState(0)
   const [toast, setToast] = useState(null)
+  const [approvals, setApprovals] = useState([]) // payment requests waiting for this traveler
   const [error, setError] = useState(null)
   const toastTimer = useRef()
   const activeRef = useRef(null)
 
   const notify = useCallback((msg, tone = 'info') => {
+    if (typeof msg === 'string' && msg.startsWith('⏳')) tone = 'info' // an approval card opened; not an error
     clearTimeout(toastTimer.current)
     setToast({ msg, tone })
     toastTimer.current = setTimeout(() => setToast(null), 4200)
   }, [])
 
+  const loadApprovals = useCallback(async (id = activeRef.current) => {
+    if (!id) return setApprovals([])
+    try { setApprovals(await api.approvals(id)) } catch { /* ignore */ }
+  }, [])
+  const upsertApproval = useCallback((a) => {
+    if (a.tour_id !== activeRef.current) return
+    setApprovals((prev) => [a, ...prev.filter((x) => x.id !== a.id)])
+  }, [])
+
   const loadPending = useCallback(async (id = activeRef.current) => {
     if (!id) return setEvents([])
     try { setEvents(await api.changes(`?tour_id=${id}&status=pending`)) } catch { /* ignore */ }
-  }, [])
+    loadApprovals(id)
+  }, [loadApprovals])
+
+  useEffect(() => {
+    const onApproval = (e) => upsertApproval(e.detail)
+    window.addEventListener('tc:approval', onApproval)
+    return () => window.removeEventListener('tc:approval', onApproval)
+  }, [upsertApproval])
 
   const refresh = useCallback(async () => {
     try {
@@ -46,6 +64,9 @@ export function TourProvider({ children }) {
   const live = useLive((m) => {
     const mine = !m.tour_id || m.tour_id === activeRef.current
     switch (m.type) {
+      case 'approval':
+        upsertApproval(m.intent)
+        break
       case 'change':
         if (m.tour_id === activeRef.current) setEvents((prev) => [m.event, ...prev.filter((e) => e.id !== m.event.id)])
         refresh()
@@ -84,6 +105,6 @@ export function TourProvider({ children }) {
     await loadPending(id)
   }, [refresh, loadPending])
 
-  const value = { state, tour, events, setEvents, version, refresh, loadPending, toast, notify, live, error, activate }
+  const value = { state, tour, events, setEvents, version, refresh, loadPending, toast, notify, live, error, activate, approvals, upsertApproval, loadApprovals }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

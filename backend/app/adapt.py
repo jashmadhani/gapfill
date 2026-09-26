@@ -651,6 +651,32 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
     return ([ev] if ev else []), None if ev else "No feasible alternatives found."
 
 
+async def apply_changes(db, tour, rows: dict, changes: list, st, cause: str, label: str) -> dict:
+    """Apply a list of plan changes to a tour (rebooking vendors, applying fees). Shared by change options and
+    by traveler edits executed after payment approval."""
+    out = {"booked": [], "fees": 0}
+    booked = tour.status == "booked"
+    for c in changes:
+        r = rows.get(c.get("item_id"))
+        if c["op"] == "replace" and r:
+            out["fees"] += await retire_row(db, tour, r, st, cause, "replaced", label)
+            nr = await new_row(db, tour, c["new"], booked)
+            out["booked"].append({"title": nr.title, "ref": nr.booking_ref})
+        elif c["op"] == "remove" and r:
+            out["fees"] += await retire_row(db, tour, r, st, cause, "cancelled", label)
+        elif c["op"] == "retime" and r:
+            await retime_row(db, tour, r, c["day"], c["start_min"], c["end_min"], label)
+        elif c["op"] == "add":
+            nr = await new_row(db, tour, c["new"], booked)
+            if nr.booking_ref:
+                out["booked"].append({"title": nr.title, "ref": nr.booking_ref})
+        elif c["op"] == "notify" and r:
+            await add_task(db, "notify", f"{r.booking_ref or ''} {r.title}: {c['text']}", tour.id, r.vendor_id, tour.coordinator_id)
+        elif c["op"] == "prefs":
+            tour.prefs = {**tour.prefs, **c["fields"]}
+    return out
+
+
 async def resolve_event(db, ev: ChangeEvent, action: str, option_key: str | None, by: str):
     st = await get_state(db)
     tour = await db.get(Tour, ev.tour_id)
@@ -665,25 +691,7 @@ async def resolve_event(db, ev: ChangeEvent, action: str, option_key: str | None
         if not opt:
             raise ValueError("Unknown option")
         cause = CAUSE.get(ev.trigger_type, "traveler")
-        booked = tour.status == "booked"
-        for c in opt["changes"]:
-            r = rows.get(c.get("item_id"))
-            if c["op"] == "replace" and r:
-                out["fees"] += await retire_row(db, tour, r, st, cause, "replaced", ev.label)
-                nr = await new_row(db, tour, c["new"], booked)
-                out["booked"].append({"title": nr.title, "ref": nr.booking_ref})
-            elif c["op"] == "remove" and r:
-                out["fees"] += await retire_row(db, tour, r, st, cause, "cancelled", ev.label)
-            elif c["op"] == "retime" and r:
-                await retime_row(db, tour, r, c["day"], c["start_min"], c["end_min"], ev.label)
-            elif c["op"] == "add":
-                nr = await new_row(db, tour, c["new"], booked)
-                if nr.booking_ref:
-                    out["booked"].append({"title": nr.title, "ref": nr.booking_ref})
-            elif c["op"] == "notify" and r:
-                await add_task(db, "notify", f"{r.booking_ref or ''} {r.title}: {c['text']}", tour.id, r.vendor_id, tour.coordinator_id)
-            elif c["op"] == "prefs":
-                tour.prefs = {**tour.prefs, **c["fields"]}
+        out = await apply_changes(db, tour, rows, opt["changes"], st, cause, ev.label)
         if opt.get("operator_cost"):
             await add_task(db, "payment", f"{tour.code}: operator absorbs {P.fmt_inr(opt['operator_cost'])} for comp upgrade", tour.id, None, tour.coordinator_id)
         ev.chosen = opt["key"]

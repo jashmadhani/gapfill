@@ -10,16 +10,22 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import roads as R
-from . import assist, customize, digital_twin as DT
+from .config import gemini_key, load_env
+
+load_env()
+
+from . import agent  # noqa: E402
+from . import payflow as PF  # noqa: E402
+from . import roads as R  # noqa: E402
+from . import assist, customize, digital_twin as DT  # noqa: E402
 from . import planner as P
 from .adapt import resolve_event, run_trigger
 from .catalog import INTERESTS, PACES, TIERS
 from .db import SessionLocal, backend_name, engine, get_db
 from .insights import log_feedback
 from .ml import infer as ML
-from .models import (ChangeEvent, ChatMessage, Coordinator, Customer, Feedback, Offering, Payment, Review, Task, Tour, TourItem,
-                     Vendor)
+from .models import (AgentAudit, ChangeEvent, ChatMessage, Coordinator, Customer, Feedback, Offering, Payment, PaymentIntent, Review, Task,
+                     Ticket, Tour, TourItem, Vendor)
 from .seed import reset_and_seed
 from .services import (book_tour, ctx_for, current_day, get_state, item_dict, load_items, payments_summary, ser_item,
                        ser_offering, serialize_tour, stage)
@@ -52,7 +58,7 @@ hub = Hub()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.connect() as conn:
-        has = await conn.run_sync(lambda c: sa_inspect(c).has_table("feedback"))
+        has = await conn.run_sync(lambda c: sa_inspect(c).has_table("agent_audit"))
     if not has:
         await reset_and_seed()
     ML.models()  # load (or train, first time) the ML models before serving
@@ -66,7 +72,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 def llm_mode():
-    return "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "rules"
+    return "gemini" if gemini_key() else "rules"
 
 
 async def tour_or_404(db, tour_id) -> Tour:
@@ -437,19 +443,36 @@ async def _custom(db, tour_id, fn):
     return {"result": out, "tour": await serialize_tour(db, tour, await get_state(db))}
 
 
+async def _paid_change(db, tour_id, action):
+    """On a booked tour, a change that costs money, carries a fee or refunds money goes to the traveler for approval."""
+    tour = await tour_or_404(db, tour_id)
+    if tour.status != "booked":
+        return None
+    try:
+        q = await PF.quote(db, tour, "change", action)
+    except PF.GateError as e:
+        raise HTTPException(400, str(e))
+    if q["amount"] > 0 or q["refund"] > 0 or q["fees"] > 0:
+        return await gate(db, tour, "change", action, "traveler")
+    return None
+
+
 @app.post("/tours/{tour_id}/items/{item_id}/swap")
 async def swap_item(tour_id: int, item_id: int, body: SwapIn, db: AsyncSession = Depends(get_db)):
-    return await _custom(db, tour_id, lambda t: customize.swap(db, t, item_id, body.offering_id, body.mode))
+    gated = await _paid_change(db, tour_id, {"type": "swap", "item_id": item_id, "offering_id": body.offering_id, "mode": body.mode})
+    return gated or await _custom(db, tour_id, lambda t: customize.swap(db, t, item_id, body.offering_id, body.mode))
 
 
 @app.delete("/tours/{tour_id}/items/{item_id}")
 async def remove_item(tour_id: int, item_id: int, db: AsyncSession = Depends(get_db)):
-    return await _custom(db, tour_id, lambda t: customize.remove(db, t, item_id))
+    gated = await _paid_change(db, tour_id, {"type": "remove", "item_id": item_id})
+    return gated or await _custom(db, tour_id, lambda t: customize.remove(db, t, item_id))
 
 
 @app.post("/tours/{tour_id}/items")
 async def add_item(tour_id: int, body: AddIn, db: AsyncSession = Depends(get_db)):
-    return await _custom(db, tour_id, lambda t: customize.add(db, t, body.offering_id, body.day))
+    gated = await _paid_change(db, tour_id, {"type": "add", "offering_id": body.offering_id, "day": body.day})
+    return gated or await _custom(db, tour_id, lambda t: customize.add(db, t, body.offering_id, body.day))
 
 
 @app.post("/tours/{tour_id}/optimise")
@@ -457,27 +480,40 @@ async def optimise(tour_id: int, db: AsyncSession = Depends(get_db)):
     return await _custom(db, tour_id, lambda t: customize.optimise(db, t))
 
 
+async def gate(db, tour, kind: str, action: dict, created_by: str) -> dict:
+    """Turn a money-moving request into an approval card for the traveler instead of acting on it."""
+    try:
+        i = await PF.propose(db, tour, kind, action, created_by)
+    except PF.GateError as e:
+        raise HTTPException(400, str(e))
+    await db.commit()
+    data = PF.ser(i)
+    await hub.broadcast({"type": "approval", "tour_id": tour.id, "intent": data})
+    who = "the traveler's phone" if created_by == "operator" else "you"
+    return {"approval_required": data, "message": f"⏳ Sent to {who} for approval — nothing is charged or changed until it's approved."}
+
+
 @app.post("/tours/{tour_id}/book")
 async def book(tour_id: int, body: BookIn, db: AsyncSession = Depends(get_db)):
-    st = await get_state(db)
+    """Booking always needs the traveler's approval and payment: this only prepares the approval card."""
     tour = await tour_or_404(db, tour_id)
     if tour.status != "draft":
         raise HTTPException(400, "Tour is already booked.")
-    items = [item_dict(r) for r in await load_items(db, tour_id)]
-    errors = [c for c in P.conflicts(items, ctx_for(tour, st)) if c["level"] == "error"]
-    if errors:
-        raise HTTPException(400, "Fix these first: " + " ".join(e["text"] for e in errors[:3]))
-    out = await book_tour(db, tour, body.pay, body.method)
-    db.add(ChatMessage(tour_id=tour.id, role="assistant", text=f"🎉 {tour.title} is booked! I'll keep an eye on every connection and warn you early if anything is at risk."))
-    await db.commit()
-    await tour_changed(tour_id, reason="booked")
-    await hub.broadcast({"type": "bookings", "tour_id": tour_id})
-    return out | {"tour": await serialize_tour(db, tour, st)}
+    return await gate(db, tour, "booking", {"pay": body.pay}, "traveler")
+
+
+@app.post("/tours/{tour_id}/pay-balance")
+async def pay_balance(tour_id: int, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    return await gate(db, tour, "balance", {}, "traveler")
 
 
 @app.post("/tours/{tour_id}/payments")
 async def pay(tour_id: int, body: PaymentIn, db: AsyncSession = Depends(get_db)):
+    """Operator bookkeeping only: records money received or returned outside the app (cash, bank transfer).
+    It never charges anyone; the traveler pays through /pay-balance and the approval flow."""
     await tour_or_404(db, tour_id)
+    PF.audit(db, tour_id, "operator", "record_offline_payment", {"amount": body.amount, "kind": body.kind, "method": body.method})
     db.add(Payment(tour_id=tour_id, amount=body.amount, method=body.method, kind=body.kind, note=body.note or ("Refund" if body.kind == "refund" else "Payment")))
     await db.commit()
     await tour_changed(tour_id, reason="payment")
@@ -632,6 +668,26 @@ async def resolve(eid: int, body: ResolveIn, db: AsyncSession = Depends(get_db))
         raise HTTPException(404, "Unknown change")
     if e.status != "pending":
         raise HTTPException(409, f"Already {e.status} by {e.resolved_by}.")
+    tour = await tour_or_404(db, e.tour_id)
+    if body.action == "accept" and tour.status == "booked":
+        key = body.option or next((o["key"] for o in e.options if o.get("recommended")), "A")
+        opt = next((o for o in e.options if o["key"] == key), None)
+        if opt and (opt.get("cost_delta") or 0) != 0:
+            try:
+                i = await PF.propose(db, tour, "change", {"type": "option", "change_id": e.id, "option": key}, body.by)
+                if i.amount > 0:  # extra cost: only the traveler can approve and pay it
+                    await db.commit()
+                    data = PF.ser(i)
+                    await hub.broadcast({"type": "approval", "tour_id": tour.id, "intent": data})
+                    who = "the traveler's phone" if body.by == "operator" else "you"
+                    return {"approval_required": data, "message": f"⏳ Sent to {who} for approval — nothing changes until it's approved and paid."}
+                await PF.approve(db, i, 0, body.by)  # cheaper: tapping "apply" is the approval; refund goes back automatically
+            except PF.GateError as err:
+                raise HTTPException(400, str(err))
+            await db.commit()
+            await hub.broadcast({"type": "change_resolved", "tour_id": e.tour_id, "event_id": e.id, "action": "accept", "by": body.by, "option": key})
+            await tour_changed(e.tour_id, reason="change")
+            return (i.result or {}) | {"event": await ser_event(db, e), "refund": i.refund}
     try:
         out = await resolve_event(db, e, body.action, body.option, body.by)
     except ValueError as err:
@@ -652,19 +708,172 @@ async def chat_history(tour_id: int, db: AsyncSession = Depends(get_db)):
 
 @app.post("/tours/{tour_id}/chat")
 async def chat(tour_id: int, body: ChatIn, db: AsyncSession = Depends(get_db)):
+    """The booking & ticketing agent. It can read, search and PROPOSE; every payment waits for the traveler."""
     tour = await tour_or_404(db, tour_id)
-    db.add(ChatMessage(tour_id=tour_id, role="user", text=body.text))
-    try:
-        reply, data = await assist.handle(db, tour, body.text)
-    except customize.CustomizeError as e:
-        reply, data = str(e), {}
-    m = ChatMessage(tour_id=tour_id, role="assistant", text=reply, data=data)
-    db.add(m)
+    before = {e.id for e in (await db.execute(select(ChangeEvent).where(ChangeEvent.tour_id == tour_id))).scalars()}
+    out = await agent.run(db, tour, body.text)
+    db.add(ChatMessage(tour_id=tour_id, role="user", text=out["safe_text"]))  # secrets never stored
+    data = {"trace": out["trace"], "approvals": out["approvals"], "mode": out["mode"], "redacted": out["redacted"]}
+    db.add(ChatMessage(tour_id=tour_id, role="assistant", text=out["reply"], data=data))
     await db.commit()
-    evs = [await db.get(ChangeEvent, i) for i in data.get("events", [])]
-    await after_events(db, [e for e in evs if e])
+    new = [e for e in (await db.execute(select(ChangeEvent).where(ChangeEvent.tour_id == tour_id))).scalars() if e.id not in before]
+    await after_events(db, new)
+    for a in out["approvals"]:
+        await hub.broadcast({"type": "approval", "tour_id": tour_id, "intent": a})
     await tour_changed(tour_id, reason="chat")
-    return {"reply": reply, "data": data}
+    return {"reply": out["reply"], "data": data, "safe_text": out["safe_text"]}
+
+
+# ---------------------------------------------------------------- approvals, checkout, tickets
+class ApproveIn(BaseModel):
+    confirm_amount: float
+
+
+class SimulateIn(BaseModel):
+    outcome: str = "success"  # success | cancel
+
+
+class RazorpayIn(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+async def intent_or_404(db, pid: str) -> PaymentIntent:
+    i = (await db.execute(select(PaymentIntent).where(PaymentIntent.public_id == pid))).scalars().first()
+    if not i:
+        raise HTTPException(404, "Unknown payment request")
+    return i
+
+
+async def _intent_done(db, i: PaymentIntent):
+    await db.commit()
+    await hub.broadcast({"type": "approval", "tour_id": i.tour_id, "intent": PF.ser(i)})
+    if i.status == "executed":
+        if i.kind == "change" and i.action.get("type") == "option":
+            await hub.broadcast({"type": "change_resolved", "tour_id": i.tour_id, "event_id": i.action["change_id"], "action": "accept",
+                                 "by": "traveler", "option": i.action["option"]})
+        await tour_changed(i.tour_id, reason="payment")
+        await hub.broadcast({"type": "bookings", "tour_id": i.tour_id})
+
+
+@app.get("/tours/{tour_id}/approvals")
+async def approvals(tour_id: int, db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(PaymentIntent).where(PaymentIntent.tour_id == tour_id).order_by(PaymentIntent.id.desc()).limit(30))).scalars().all()
+    for i in rows:
+        PF.expire(i)
+    await db.commit()
+    return [PF.ser(i) for i in rows]
+
+
+@app.get("/payments/intents/{pid}")
+async def intent(pid: str, db: AsyncSession = Depends(get_db)):
+    i = await intent_or_404(db, pid)
+    PF.expire(i)
+    await db.commit()
+    return PF.ser(i)
+
+
+@app.post("/payments/intents/{pid}/approve")
+async def approve_intent(pid: str, body: ApproveIn, db: AsyncSession = Depends(get_db)):
+    """The traveler's own tap in the app. The agent has no tool that reaches this endpoint."""
+    i = await intent_or_404(db, pid)
+    try:
+        out = await PF.approve(db, i, body.confirm_amount, "traveler")
+    except PF.GateError as e:
+        await db.commit()
+        await hub.broadcast({"type": "approval", "tour_id": i.tour_id, "intent": PF.ser(i)})
+        raise HTTPException(409, str(e))
+    await _intent_done(db, i)
+    return out | {"intent": PF.ser(i)}
+
+
+@app.post("/payments/intents/{pid}/decline")
+async def decline_intent(pid: str, db: AsyncSession = Depends(get_db)):
+    i = await intent_or_404(db, pid)
+    await PF.decline(db, i, "traveler")
+    await _intent_done(db, i)
+    return PF.ser(i)
+
+
+@app.post("/payments/intents/{pid}/simulate")
+async def simulate_payment(pid: str, body: SimulateIn, db: AsyncSession = Depends(get_db)):
+    """The simulated provider's result. Only valid for simulated-provider intents that the traveler already approved."""
+    i = await intent_or_404(db, pid)
+    if i.provider != "simulated":
+        raise HTTPException(400, "This payment isn't using the test provider.")
+    if PF.expire(i):
+        await _intent_done(db, i)
+        raise HTTPException(409, "This payment request expired. Nothing was charged.")
+    try:
+        if body.outcome == "success":
+            await PF.confirm_payment(db, i, "sim_" + os.urandom(6).hex(), "upi")
+        else:
+            await PF.decline(db, i, "traveler")
+    except PF.GateError as e:
+        raise HTTPException(409, str(e))
+    await _intent_done(db, i)
+    return PF.ser(i)
+
+
+@app.post("/payments/intents/{pid}/razorpay")
+async def razorpay_verify(pid: str, body: RazorpayIn, db: AsyncSession = Depends(get_db)):
+    """Razorpay Checkout success handler: verify the signature server-side before treating the payment as real."""
+    from .payproviders import RazorpayProvider, provider
+    i = await intent_or_404(db, pid)
+    prov = provider()
+    if not isinstance(prov, RazorpayProvider) or i.provider != "razorpay" or body.razorpay_order_id != i.provider_order_id:
+        raise HTTPException(400, "Payment doesn't match this request.")
+    if not prov.verify(body.razorpay_order_id, body.razorpay_payment_id, body.razorpay_signature):
+        PF.audit(db, i.tour_id, "provider", "signature_check", {"order": body.razorpay_order_id}, "blocked", i.public_id)
+        await db.commit()
+        raise HTTPException(400, "Payment signature is invalid.")
+    try:
+        await PF.confirm_payment(db, i, body.razorpay_payment_id, "razorpay")
+    except PF.GateError as e:
+        raise HTTPException(409, str(e))
+    await _intent_done(db, i)
+    return PF.ser(i)
+
+
+@app.get("/tours/{tour_id}/tickets")
+async def tickets(tour_id: int, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    st = await get_state(db)
+    await PF.sync_tickets(db, tour)
+    await db.commit()
+    rows = {r.id: r for r in await load_items(db, tour_id)}
+    out = []
+    for t in (await db.execute(select(Ticket).where(Ticket.tour_id == tour_id).order_by(Ticket.id))).scalars():
+        r = rows.get(t.item_id)
+        if not r:
+            continue
+        it = ser_item(tour, item_dict(r), st)
+        out.append({"code": t.code, "status": t.status, "void_reason": t.void_reason, "qr": PF.qr_payload(t) if t.status == "valid" else None,
+                    "issued_at": t.issued_at.isoformat() + "Z", "item_id": r.id, "title": r.title, "kind": r.kind, "day": r.day, "date": it["date"],
+                    "time": it["start_label"], "dest": it.get("dest_name"), "vendor": it.get("vendor_name"), "booking_ref": r.booking_ref,
+                    "qty": r.qty, "nights": r.nights})
+    return {"tour": {"id": tour.id, "code": tour.code, "title": tour.title, "travelers": [m["name"] for m in ctx_for(tour, st)["members"]]}, "tickets": out}
+
+
+@app.get("/tickets/verify")
+async def verify(payload: str, db: AsyncSession = Depends(get_db)):
+    return await PF.verify_ticket(db, payload)
+
+
+@app.get("/operator/agent-audit")
+async def agent_audit(limit: int = 150, db: AsyncSession = Depends(get_db)):
+    tours = {t.id: t.code for t in (await db.execute(select(Tour))).scalars()}
+    intents = (await db.execute(select(PaymentIntent).order_by(PaymentIntent.id.desc()).limit(60))).scalars().all()
+    for i in intents:
+        PF.expire(i)
+    await db.commit()
+    logs = (await db.execute(select(AgentAudit).order_by(AgentAudit.id.desc()).limit(limit))).scalars().all()
+    return {"intents": [PF.ser(i) | {"tour_code": tours.get(i.tour_id)} for i in intents],
+            "log": [{"id": a.id, "tour_code": tours.get(a.tour_id), "actor": a.actor, "action": a.action, "detail": a.detail, "outcome": a.outcome,
+                     "intent_id": a.intent_id, "at": a.created_at.isoformat() + "Z"} for a in logs],
+            "agent": {"model": "gemini" if gemini_key() else "rules fallback", "tools": [{"name": n, "kind": k} for n, (k, _, _) in agent.TOOLS.items()],
+                      "limits": {"tool_calls_per_message": agent.MAX_TOOL_CALLS, "proposals_per_message": agent.MAX_PROPOSALS}}}
 
 
 # ---------------------------------------------------------------- vendors

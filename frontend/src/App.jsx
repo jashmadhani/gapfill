@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Compass, Map, MessageCircle, Plane, UserRound } from 'lucide-react'
 import { TourProvider, useTour } from './store'
 import ChangeCard from './components/ChangeCard'
+import ApprovalSheet from './components/ApprovalSheet'
 import { cx } from './components/ui'
 import Discover from './pages/Discover'
 import DestinationDetail from './pages/DestinationDetail'
@@ -17,6 +18,8 @@ import Assist from './pages/Assist'
 import Review from './pages/Review'
 import Tours from './pages/Tours'
 import Profile from './pages/Profile'
+import Checkout from './pages/Checkout'
+import Tickets from './pages/Tickets'
 import VendorPortal from './pages/VendorPortal'
 import LiveOps from './pages/LiveOps'
 import OperatorApp from './operator/OperatorApp'
@@ -87,6 +90,7 @@ function TravelerShell({ children }) {
         </div>
       </nav>
       <ChangeCard />
+      <ApprovalSheet />
       <Toast />
     </div>
   )
@@ -118,6 +122,8 @@ export default function App() {
         <Route path="/review" element={T(<Review />)} />
         <Route path="/tours" element={T(<Tours />)} />
         <Route path="/profile" element={T(<Profile />)} />
+        <Route path="/tickets" element={T(<Tickets />)} />
+        <Route path="/checkout/:pid" element={<><Checkout /><Toast /></>} />
         <Route path="/vendor" element={<VendorPortal />} />
         <Route path="/vendor/:id" element={<VendorPortal />} />
         <Route path="/operator/*" element={<OperatorApp />} />

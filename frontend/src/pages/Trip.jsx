@@ -223,7 +223,7 @@ function Operate({ tour, state, onFix }) {
 
       </div>
       <div className="space-y-5 lg:sticky lg:top-24">
-      <div id="timeline"><DayTimeline d={today} title="Today" editable now={now} risks={tour.risks} onAction={onTag} busy={tagBusy} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} /></div>
+      <div id="timeline"><DayTimeline d={today} title="Today" editable now={now} risks={tour.risks} onAction={onTag} busy={tagBusy} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed')).catch((e) => notify(e.message, 'error'))} /></div>
 
       <ReportChange tour={tour} today={today} fire={fire} busy={busy} />
 
@@ -237,6 +237,11 @@ function Operate({ tour, state, onFix }) {
           <ArrowRight size={20} className="text-stone-500" aria-hidden />
         </Link>
       )}
+      <Link to="/tickets" className="flex min-h-16 items-center gap-4 rounded-[1.75rem] bg-ink p-4 text-white shadow-soft">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><Ticket size={21} aria-hidden /></span>
+        <span className="min-w-0 flex-1"><span className="block text-lg font-bold">Trip pass</span><span className="block text-sm text-white/75">Your QR tickets for every booking</span></span>
+        <ArrowRight size={20} aria-hidden />
+      </Link>
       <Coordinator c={tour.coordinator} />
       <Changes tour={tour} />
       </div>
@@ -295,6 +300,11 @@ function Prepare({ tour, state, onFix }) {
           {c.key === 'balance' && <Link to="/price" className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-white">Pay {inr(tour.payments.balance)}</Link>}
         </button>
       ))}
+      <Link to="/tickets" className="flex min-h-16 items-center gap-4 rounded-[1.75rem] bg-ink p-4 text-white shadow-soft">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><Ticket size={21} aria-hidden /></span>
+        <span className="min-w-0 flex-1"><span className="block text-lg font-bold">Trip pass</span><span className="block text-sm text-white/75">Your QR tickets for every booking</span></span>
+        <ArrowRight size={20} aria-hidden />
+      </Link>
       <Coordinator c={tour.coordinator} />
       <Changes tour={tour} />
 

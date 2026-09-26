@@ -323,7 +323,7 @@ async def assign_coordinator(db, tour: Tour) -> Coordinator | None:
     return min(coords, key=lambda c: (load[c.id] - (1.5 if c.base in stops else 0), c.id))
 
 
-async def book_tour(db, tour: Tour, pay_mode: str = "deposit", method: str = "upi") -> dict:
+async def book_tour(db, tour: Tour, pay_mode: str = "deposit", method: str = "upi", record_payment: bool = True) -> dict:
     st = await get_state(db)
     rows = await load_items(db, tour.id)
     if not tour.coordinator_id:
@@ -346,7 +346,7 @@ async def book_tour(db, tour: Tour, pay_mode: str = "deposit", method: str = "up
     tour.booked_at = datetime.utcnow()
     total = P.price([item_dict(r) for r in rows], ctx_for(tour, st))["total"]
     amount = total if pay_mode == "full" else round(total * DEPOSIT)
-    if amount > 0:
+    if amount > 0 and record_payment:  # checkout payments are recorded by the payment gate instead
         db.add(Payment(tour_id=tour.id, amount=amount, kind="payment", method=method,
                        note="Full payment" if pay_mode == "full" else "30% deposit"))
     return {"refs": refs, "paid": amount, "total": total}

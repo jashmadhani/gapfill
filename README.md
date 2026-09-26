@@ -47,7 +47,7 @@ npm run dev                                         # proxies /api and /ws to :8
 
 The default database is SQLite (`backend/tourcraft.db`). To use Postgres, set `DATABASE_URL=postgresql+asyncpg://localhost/tourcraft`.
 
-To use Claude in the trip assistant, set `ANTHROPIC_API_KEY` (and optionally `TOURCRAFT_LLM_MODEL`). Claude then classifies free-text requests. Without a key, or if the call fails, the assistant uses its rules-based parser, so it never breaks.
+The trip assistant is the booking agent (see [Booking agent](#booking-agent-human-approval-before-every-payment)). To give it Gemini, copy `backend/.env.example` to `backend/.env` and set `GEMINI_API_KEY`. Without a key, or if the call fails, it runs a rules-based fallback through the same guarded tools, so it never breaks. Optional Razorpay **test** keys in the same file switch checkout from the simulated page to Razorpay's hosted page.
 
 ### Tests
 
@@ -68,6 +68,12 @@ The smoke test runs the whole lifecycle through the API:
 - Review
 - Group-aware planning: a three-generation group with a step-free senior. The test asserts nobody is ever booked into something unsafe for them, rest blocks exist, and the "considered, not added" list is populated.
 - Mood check-in from free text, the ML endpoints, and that swaps, additions, removals and reviews produce feedback rows for retraining
+
+The agent safety test (27 checks) drives a fake LLM that actively tries to approve and record payments itself, leaks a card number and PIN, and races a price change, then asserts every payment still waits for the traveler:
+
+```bash
+cd backend && .venv/bin/python -m tests.agent_safety_test
+```
 
 To retrain the models (about 1 minute):
 
@@ -230,6 +236,39 @@ Evaluation holds out whole places, not rows. Eleven hand-written **behaviour tes
 - a **playground** where you set age, time, month, rain, step-free and mood and watch a prediction and its reasons change
 - version history, with a **Retrain** button
 
+## Booking agent: human approval before every payment
+
+The trip assistant is a tool-calling agent: Gemini function calling, with a rules-based fallback. It can read the trip, search, and **prepare** bookings and paid changes. It can never approve, pay, refund or see payment credentials.
+
+```
+Traveler ──chat──► Agent (Gemini / rules) ──tool calls──► Gateway (allowlist, limits, audit)
+                                                               │ propose_* only
+                                                               ▼
+                                              PaymentIntent (proposed, cart-hash locked, 15-min expiry)
+                                                               │
+Traveler ──Approve exact amount──► approval card ──► provider page (Razorpay / simulated)
+                                                               │ verified payment
+                                                               ▼
+                                   re-check hash → execute booking/change → signed QR tickets
+```
+
+**What the agent can do (18 tools)**
+- **Read:** trip, day, experiences, alternatives, cancellation policy, pending changes, payments, tickets
+- **Act (no money):** report running late, report weather, mood check-in, request a callback
+- **Propose (money):** book the tour, pay the balance, choose a recovery option, add, swap or remove an experience. Each creates an approval card and nothing else.
+
+**Guardrails**
+- No tool approves or pays. The gateway rejects any tool not on the allowlist and logs the attempt as *blocked*.
+- The tour id is injected by the server, never taken from the model. Limits: 10 tool calls and 3 proposals per message, plus a spend ceiling (`AGENT_MAX_PROPOSAL`).
+- Every paid path is gated, not only the agent's: booking, balance, paid swap/add/remove, and costly recovery options, including those an operator picks.
+- The traveler must confirm the exact amount. The plan and price are hashed at proposal and re-checked at approval and after payment. If anything changed, the request goes stale and any payment is auto-refunded.
+- Card numbers (Luhn-checked), CVV, PIN/OTP, passwords, ID numbers and API keys are redacted before they reach the LLM, the chat history or the audit log.
+- Payment details are only ever entered on the provider's page. The simulated checkout deliberately has no credential fields.
+- Approve and Pay buttons arm after a short delay, so a double tap can't carry through to a payment.
+- **Operator → Booking agent** shows every payment request and every tool call, including blocked ones.
+
+Tickets are HMAC-signed QR codes (**Trip pass**, `/tickets`). A change voids the old ticket and issues a new one. `GET /tickets/verify?payload=` checks them.
+
 ## 2-minute demo script
 
 1. Open **/ops** and press **Reset demo data**. It is day 2 of Aanya's *Royal Rajasthan for Two* (Jaipur → Jodhpur → Udaipur), 11:30 AM.
@@ -265,6 +304,11 @@ Backend modules:
 | `backend/app/planner.py` | Recommendations, routing, group-fair ML scheduling (vetoes, rest blocks, split tracks), pricing, optimisation, conflicts, alternatives |
 | `backend/app/adapt.py` | Disruption impact analysis and recovery options |
 | `backend/app/customize.py` | Swap, add, remove, optimise, regenerate |
-| `backend/app/assist.py` | Trip assistant |
+| `backend/app/assist.py` | Trip assistant intent helpers |
+| `backend/app/agent.py` | Booking agent: tools, gateway, Gemini client, rules fallback |
+| `backend/app/payflow.py` | Payment intents: propose, approve, confirm, execute, tickets, audit |
+| `backend/app/payproviders.py` | Razorpay (test) and simulated checkout providers |
+| `backend/app/safety.py` | Secret redaction for chat, LLM and logs |
+| `backend/app/config.py` | Loads `backend/.env` |
 | `backend/app/services.py` | Lifecycle stage, booking, payments, tasks, cancellation policy, risks, checklist, serialisation |
 | `backend/app/main.py` | REST + WebSocket API |

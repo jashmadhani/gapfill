@@ -1,6 +1,15 @@
 // All calls go through the Vite proxy (/api -> FastAPI on :8000), so no CORS setup is needed in dev.
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
+// Raised when the server answers a money-moving request with an approval card instead of acting on it.
+export class ApprovalPending extends Error {
+  constructor(intent, message) {
+    super(message || '⏳ Review and approve to continue — nothing has been charged yet.')
+    this.intent = intent
+    this.pending = true
+  }
+}
+
 async function req(method, path, body) {
   const res = await fetch(BASE + path, {
     method,
@@ -9,6 +18,11 @@ async function req(method, path, body) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`)
+  if (data && data.approval_required) {
+    // Any screen that triggers a payment gets the same approval sheet (see components/ApprovalSheet.jsx).
+    window.dispatchEvent(new CustomEvent('tc:approval', { detail: data.approval_required }))
+    throw new ApprovalPending(data.approval_required, data.message)
+  }
   return data
 }
 
@@ -82,4 +96,17 @@ Object.assign(api, {
   dtSocialSignals: (city, rain_mm, temp, condition) =>
     req('GET', `/digital-twin/social-signals?city=${encodeURIComponent(city)}&rain_mm=${rain_mm}&temp=${temp}&condition=${encodeURIComponent(condition)}`),
   dtApplyMitigation: (tourId) => req('POST', `/digital-twin/apply-mitigation?tour_id=${tourId}`),
+})
+
+Object.assign(api, {
+  payBalance: (id) => req('POST', `/tours/${id}/pay-balance`),
+  approvals: (id) => req('GET', `/tours/${id}/approvals`),
+  intent: (pid) => req('GET', `/payments/intents/${pid}`),
+  approveIntent: (pid, confirm_amount) => req('POST', `/payments/intents/${pid}/approve`, { confirm_amount }),
+  declineIntent: (pid) => req('POST', `/payments/intents/${pid}/decline`),
+  simulatePay: (pid, outcome) => req('POST', `/payments/intents/${pid}/simulate`, { outcome }),
+  razorpayVerify: (pid, body) => req('POST', `/payments/intents/${pid}/razorpay`, body),
+  tickets: (id) => req('GET', `/tours/${id}/tickets`),
+  verifyTicket: (payload) => req('GET', `/tickets/verify?payload=${encodeURIComponent(payload)}`),
+  agentAudit: () => req('GET', '/operator/agent-audit'),
 })

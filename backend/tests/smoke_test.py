@@ -12,6 +12,17 @@ def ok(r):
     return r.json()
 
 
+def approve_and_pay(c, resp):
+    """Money-moving calls return an approval card; play the traveler: approve the exact amount, then pay on the test page."""
+    a = resp.get("approval_required") if isinstance(resp, dict) else None
+    if not a:
+        return resp
+    r = ok(c.post(f"/payments/intents/{a['id']}/approve", json={"confirm_amount": a["amount"]}))
+    if r["status"] == "awaiting_payment":
+        r = ok(c.post(f"/payments/intents/{a['id']}/simulate", json={"outcome": "success"}))
+    return r
+
+
 def main():
     asyncio.run(reset_and_seed())
     with TestClient(app) as c:
@@ -51,8 +62,8 @@ def main():
         full = ok(c.get(f"/tours/{new_id}"))
         if any(x["level"] == "error" for x in full["conflicts"]):
             print("conflicts:", full["conflicts"])
-        b = ok(c.post(f"/tours/{new_id}/book", json={"pay": "deposit"}))
-        assert b["refs"] and b["tour"]["status"] == "booked"
+        b = approve_and_pay(c, ok(c.post(f"/tours/{new_id}/book", json={"pay": "deposit"})))
+        assert b["status"] == "executed" and b["result"]["refs"] and ok(c.get(f"/tours/{new_id}"))["status"] == "booked"
         ok(c.post(f"/tours/{tid}/activate"))
 
         # Adapt: every trigger on the active (in-progress) tour
@@ -63,7 +74,7 @@ def main():
         for e in r["events"]:
             if e["tour_id"] == tid:
                 rec = next(o for o in e["options"] if o["recommended"])
-                ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": rec["key"]}))
+                approve_and_pay(c, ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": rec["key"]})))
 
         for body in ({"trigger_type": "transport_delay", "minutes": 150}, {"trigger_type": "transport_cancel"},
                      {"trigger_type": "hotel_issue"}, {"trigger_type": "running_late", "minutes": 60},
@@ -71,7 +82,7 @@ def main():
             r = ok(c.post("/changes/trigger", json=body))
             print(body["trigger_type"], "→", r["note"], [(o["label"], o["cost_delta"], o.get("recommended")) for e in r["events"] for o in e["options"]])
             for e in r["events"]:
-                ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"], "by": "operator"}))
+                approve_and_pay(c, ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"], "by": "operator"})))
 
         # Vendor side: close a vendor with an upcoming booking, confirm/decline requests
         tour = ok(c.get(f"/tours/{tid}"))
@@ -147,7 +158,7 @@ def main():
         print("mood:", m["moods"], m["note"], [o["label"] for e in m["events"] for o in e["options"]])
         assert "tired" in m["moods"]
         for e in m["events"]:
-            ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"]}))
+            approve_and_pay(c, ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"]})))
 
         # ML endpoints
         met = ok(c.get("/ml/metrics"))

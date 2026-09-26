@@ -102,8 +102,8 @@ export default function ChangeCard() {
       refresh()
     } catch (e) {
       notify(e.message, 'error')
-      setEvents((prev) => prev.filter((x) => x.id !== ev.id))
-      refresh()
+      setEvents((prev) => prev.filter((x) => x.id !== ev.id)) // a costlier option moves to the approval card
+      if (!e.pending) refresh()
     } finally { setBusy(false) }
   }
 
