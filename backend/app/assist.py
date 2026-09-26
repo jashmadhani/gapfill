@@ -118,7 +118,7 @@ def match_offerings(keyword: str, dest: str, ctx) -> list:
 def fmt_day(tour, items, d, st) -> str:
     rows = sorted([i for i in items if i["day"] == d and P.live(i) and i["kind"] in ("activity", "transport")], key=lambda i: i["start_min"])
     if not rows:
-        return f"Day {d} is free — want me to add something?"
+        return f"Day {d} is free. Want me to add something?"
     lines = [f"{'✓ ' if is_past(tour, i, st) else '• '}{P.label(i['start_min'])} {i['title']}" for i in rows]
     return "\n".join(lines)
 
@@ -143,14 +143,14 @@ async def handle(db, tour, text: str) -> tuple[str, dict]:
         pay = await payments_summary(db, tour, pr["total"])
         return (f"Your tour is {P.fmt_inr(pr['total'])} ({P.fmt_inr(pr['per_person'])} per person). "
                 f"Paid {P.fmt_inr(pay['net_paid'])}, balance {P.fmt_inr(max(0, pay['balance']))}."
-                + (f" Budget {P.fmt_inr(pr['budget'])} — {'within budget ✓' if pr['within_budget'] else P.fmt_inr(pr['over_by']) + ' over'}." if pr["budget"] else "")), data
+                + (f" Budget {P.fmt_inr(pr['budget'])}, {'within budget ✓' if pr['within_budget'] else P.fmt_inr(pr['over_by']) + ' over'}." if pr["budget"] else "")), data
     if intent in ("late", "rain"):
         body = {"trigger_type": "running_late", "tour_id": tour.id, "minutes": parsed.get("minutes") or 45, "source": "traveler"} if intent == "late" else \
                {"trigger_type": "weather", "dest": P.dest_for_day(ctx, target), "date": str(tour.start_date.fromordinal(tour.start_date.toordinal() + target - 1)), "source": "traveler"}
         evs, note = await run_trigger(db, body, tour.id)
         data["events"] = [e.id for e in evs if e.tour_id == tour.id]
         if data["events"]:
-            return "I've worked out what's affected and prepared options — compare them on the card below and pick one.", data
+            return "I've worked out what's affected and prepared options. Compare them on the card below and pick one.", data
         return note or "Nothing in your plan is affected.", data
     if intent == "mood":
         from .ml import infer as ML
@@ -159,14 +159,14 @@ async def handle(db, tour, text: str) -> tuple[str, dict]:
         data["events"] = [e.id for e in evs if e.tour_id == tour.id]
         data["moods"] = moods
         if data["events"]:
-            return f"Got it — reading that as {', '.join(moods) or 'neutral'}. I re-scored the rest of the day for everyone; compare the options on the card.", data
+            return f"Got it: reading that as {', '.join(moods) or 'neutral'}. I re-scored the rest of the day for everyone; compare the options on the card.", data
         return note or "Noted.", data
     if intent == "weather":
         rainy = [f"day {d}" for d in range(1, tour.days + 1) if P.rain_on(ctx, P.dest_for_day(ctx, d), d)]
         return ("Rain is forecast on " + ", ".join(rainy) + ". I'll flag outdoor plans." if rainy else "Clear skies forecast for your whole tour ☀️"), data
     if intent == "coordinator":
         c = await db.get(Coordinator, tour.coordinator_id) if tour.coordinator_id else None
-        await add_task(db, "callback", f"{tour.code}: traveler asked for a call — “{text[:80]}”", tour.id, None, tour.coordinator_id)
+        await add_task(db, "callback", f"{tour.code}: traveler asked for a call, “{text[:80]}”", tour.id, None, tour.coordinator_id)
         return (f"I've asked {c.name} to call you back. You can also reach them directly on {c.phone}." if c
                 else "I've asked the operations team to call you back shortly."), data
     if intent == "add":
@@ -181,7 +181,7 @@ async def handle(db, tour, text: str) -> tuple[str, dict]:
                 words = [w for w in re.findall(r"[a-z]+", (parsed.get("keyword") or "").lower()) if len(w) > 3]
                 exact = not words or any(w in o["title"].lower() for w in words)
                 return ((f"There's no exact match in {P.W['dests'][dest]['name']}, so I picked the closest. " if not exact else "")
-                        + f"Added {o['title']} on day {r['day']} at {r['start_label']} — {P.fmt_inr(o['price'])} per person, {o['rating']:.1f}★."
+                        + f"Added {o['title']} on day {r['day']} at {r['start_label']}, {P.fmt_inr(o['price'])} per person, {o['rating']:.1f}★."
                         + (f" Booking {r['booking_ref']} sent to the vendor for confirmation." if r.get("booking_ref") else "")), data
             except CustomizeError:
                 continue
@@ -209,7 +209,7 @@ async def handle(db, tour, text: str) -> tuple[str, dict]:
         if not alt:
             return f"{h['title']} is already the {'top' if intent == 'hotel_up' else 'most affordable'} option in {P.W['dests'][h['dest_key']]['name']}.", data
         r = await swap(db, tour, h["id"], alt["offering"]["id"])
-        return (f"Switched {P.W['dests'][h['dest_key']]['name']} to {r['title']} ({alt['offering']['tier']}) — "
+        return (f"Switched {P.W['dests'][h['dest_key']]['name']} to {r['title']} ({alt['offering']['tier']}), "
                 f"{'+' if alt['delta'] > 0 else ''}{P.fmt_inr(P.gross(alt['delta']))} incl. taxes." + (f" Fee {P.fmt_inr(r['fee'])}." if r["fee"] else "")), data
     if intent == "lighter":
         acts = [i for i in items if P.live(i) and i["kind"] == "activity" and i["day"] == target and not is_past(tour, i, st)]

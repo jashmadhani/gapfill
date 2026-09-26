@@ -35,7 +35,7 @@ DESTINATIONS = {
     "jaisalmer": ("Jaisalmer", "Rajasthan", "A living golden fort on the edge of the Thar",
                   "Sandstone havelis, camel safaris in the Sam dunes and folk music nights under desert skies.",
                   26.9157, 70.9083, ["adventure", "culture", "photography", "nightlife", "nature"], 2, True, True, "Nov–Feb"),
-    "udaipur": ("Udaipur", "Rajasthan", "The City of Lakes — palaces, boats and sunsets",
+    "udaipur": ("Udaipur", "Rajasthan", "The City of Lakes: palaces, boats and sunsets",
                 "Romantic lake palaces, rooftop sunsets, cooking classes and folk dance evenings.",
                 24.5854, 73.7125, ["relaxation", "culture", "photography", "heritage", "food"], 2, True, True, "Sep–Mar"),
 }
@@ -112,9 +112,9 @@ ACTIVITIES = [
     ("pushkar", "Hot Air Balloon Ride", ["adventure", "photography"], 60, 12000, "06:00", "09:00", "outdoor", 4.8, 90, False, False, [], "Sky Waltz Balloons",
      "Float over the lake and the desert at dawn."),
     # Ranthambore
-    ("ranthambore", "Tiger Safari — Morning Canter", ["wildlife", "nature", "adventure"], 210, 1800, "06:30", "10:00", "outdoor", 4.6, 890, True, False, [], "Ranthambore Safari Desk",
+    ("ranthambore", "Tiger Safari: Morning Canter", ["wildlife", "nature", "adventure"], 210, 1800, "06:30", "10:00", "outdoor", 4.6, 890, True, False, [], "Ranthambore Safari Desk",
      "Shared 20-seat canter through the park's zones at first light."),
-    ("ranthambore", "Tiger Safari — Private Gypsy", ["wildlife", "photography"], 210, 5500, "14:30", "18:30", "outdoor", 4.8, 410, True, False, [], "Ranthambore Safari Desk",
+    ("ranthambore", "Tiger Safari: Private Gypsy", ["wildlife", "photography"], 210, 5500, "14:30", "18:30", "outdoor", 4.8, 410, True, False, [], "Ranthambore Safari Desk",
      "A 6-seat gypsy with a naturalist, best odds for sightings and photos."),
     ("ranthambore", "Ranthambore Fort Hike", ["heritage", "nature"], 150, 400, "08:00", "17:00", "outdoor", 4.4, 260, True, False, [], "Ranthambore Safari Desk",
      "Climb to the 10th-century fort and Ganesh temple inside the reserve."),
@@ -166,7 +166,7 @@ TIER_AMENITIES = {
     "premium": ["Wi-Fi", "Breakfast", "Pool", "Lift"], "luxury": ["Wi-Fi", "All meals", "Pool", "Spa", "Lift", "Butler"],
 }
 
-# (name, mode, rate, contact) — car: ₹/km per vehicle; train: ₹/km per person; flight: base ₹ per person (+₹4/km)
+# (name, mode, rate, contact), car: ₹/km per vehicle; train: ₹/km per person; flight: base ₹ per person (+₹4/km)
 TRANSPORT = [
     ("Rajputana Cabs", "car", 14, "Dispatch desk"),
     ("Marwar Rail Desk", "train", 1.7, "Rail bookings"),
@@ -230,8 +230,8 @@ ATTRS = {
     "Savitri Temple Ropeway Sunrise": ("religious", 3, 0.6, 1.0, 0.2, 0.2, 0, 0.1, "morning", None),
     "Pushkar Bazaar & Cafe Trail": ("shopping", 2, 0.0, 2.0, 0.4, 0.4, 0, 0.1, "evening", None),
     "Hot Air Balloon Ride": ("adventure", 2, 0.0, 0.2, 0.2, 0.0, 8, 0.02, "morning", None),
-    "Tiger Safari — Morning Canter": ("wildlife", 2, 0.1, 0.2, 0.8, 0.1, 0, 0.3, "morning", ("Sawai Madhopur", "Ranthambore National Park")),
-    "Tiger Safari — Private Gypsy": ("wildlife", 2, 0.1, 0.2, 0.8, 0.1, 0, 0.3, "afternoon", ("Sawai Madhopur", "Ranthambore National Park")),
+    "Tiger Safari: Morning Canter": ("wildlife", 2, 0.1, 0.2, 0.8, 0.1, 0, 0.3, "morning", ("Sawai Madhopur", "Ranthambore National Park")),
+    "Tiger Safari: Private Gypsy": ("wildlife", 2, 0.1, 0.2, 0.8, 0.1, 0, 0.3, "afternoon", ("Sawai Madhopur", "Ranthambore National Park")),
     "Ranthambore Fort Hike": ("heritage", 4, 0.9, 3.0, 0.1, 0.3, 0, 0.2, "morning", None),
     "Dastkar Craft Village Visit": ("workshop", 1, 0.0, 0.5, 0.7, 0.8, 0, 0.02, "all", None),
     "Taj Mahal Sunrise Guided Tour": ("heritage", 2, 0.2, 2.5, 0.2, 0.2, 0, 2.2, "morning", ("Agra", "Taj Mahal")),

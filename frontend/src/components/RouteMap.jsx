@@ -41,7 +41,7 @@ function pinEl({ label, status, kind, text, sub, selected, onClick }) {
 
 /**
  * Story map of a tour.
- * route: the cities, joined by real roads — green = travelled, dashed blue = ahead, orange = changed.
+ * route: the cities, joined by real roads, green = travelled, dashed blue = ahead, orange = changed.
  * today: the current day's stops in order (hotel → 1 → 2 → 3) on real streets.
  * Tapping a stop flies to it and tells the parent (which shows the photo card).
  */
@@ -120,7 +120,7 @@ export default function RouteMap({ model, suggestions = [], selected, onSelect, 
     } else {
       if (model.hotel) add(model.hotel.lngLat, { label: `Hotel: ${model.hotel.title}`, kind: 'hotel', text: 'H', status: 'done' })
       model.today.forEach((a, i) => add(a.lngLat, {
-        label: `${a.title}, ${a.start}`, kind: 'activity', text: a.status === 'done' ? '✓' : i + 1, sub: a.start,
+        label: `${a.title}, ${a.start}`, kind: 'activity', text: a.status === 'done' ? '✓' : i + 1, sub: a.status === 'current' || (selected?.type === 'activity' && selected.id === a.id) ? a.start : null,
         status: a.status, selected: selected?.type === 'activity' && selected.id === a.id, onClick: () => onSelect?.({ type: 'activity', id: a.id }),
       }))
     }

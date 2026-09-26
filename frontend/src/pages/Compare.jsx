@@ -48,7 +48,7 @@ export default function Compare() {
           {it.kind === 'hotel' ? `${TIER_LABEL[it.meta.tier]} · ${it.nights} nights · ${it.qty} room(s)` : `${it.start_label} – ${it.end_label}`}
           {it.offering?.rating && it.kind !== 'transport' ? ` · ${it.offering.rating.toFixed(1)}★` : ''}
         </div>
-        {booked && <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">Already booked — {it.policy}</p>}
+        {booked && <p className="mt-2 rounded-lg bg-amber-50 px-2 py-1.5 text-xs text-amber-800">Already booked, {it.policy}</p>}
       </Card>
 
       <div className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{alts.length} alternative{alts.length === 1 ? '' : 's'} that fit</div>

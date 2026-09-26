@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { api } from '../api'
+import { useTour } from '../store'
 import {
   Check, Coffee, Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
   Plane, ShoppingBag, Sparkles, Star, Sun, TrainFront, Umbrella, UtensilsCrossed,
@@ -160,7 +162,7 @@ export function Bar({ value, max, tone = 'rani', className }) {
 // One line instead of an 11-chip strip: where you are, a thin progress bar, and the single next action.
 const NEXT_STEP = {
   plan: ['Planning', 'Review & book', '/price'],
-  prepare: ['Booked · getting ready', 'Get ready', '/trip'],
+  prepare: ['Booked · getting ready', 'Start my trip', 'start'],
   operate: ['On tour', 'Today’s plan', '/trip'],
   complete: ['Tour complete', 'Rate your tour', '/review'],
   review: ['Reviewed', 'Plan your next trip', '/personalize'],
@@ -181,9 +183,28 @@ export function JourneyStrip({ stage, day, days, hideAction = false }) {
           <div className="h-full rounded-full bg-rani-600" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      {!hideAction && <Link to={to} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-rani-600 px-4 text-sm font-semibold text-white">{action}</Link>}
+      {!hideAction && (to === 'start'
+        ? <StartTripButton className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-rani-600 px-4 text-sm font-semibold text-white">{action}</StartTripButton>
+        : <Link to={to} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-rani-600 px-4 text-sm font-semibold text-white">{action}</Link>)}
     </div>
   )
+}
+
+// Step 6 -> 7: a booked tour goes live on its start date. In the demo, move the clock to day 1 so it starts now.
+export function StartTripButton({ className, children = 'Start my trip' }) {
+  const { refresh, notify } = useTour()
+  const nav = useNavigate()
+  const [busy, setBusy] = useState(false)
+  const go = async () => {
+    setBusy(true)
+    try {
+      await api.setClock({ day: 1, time: '09:00' })
+      await refresh()
+      notify('Your trip has started. Have a great day 1!', 'success')
+      nav('/trip')
+    } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
+  }
+  return <button type="button" onClick={go} disabled={busy} className={className}>{busy ? 'Starting…' : children}</button>
 }
 
 // Show the most useful interests first; the rest sit behind "More" so the row stays short.

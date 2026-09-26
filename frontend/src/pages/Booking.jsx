@@ -12,7 +12,7 @@ export default function Booking() {
     <div className="px-4 pt-8 text-center">
       <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600"><CheckCheck size={32} /></div>
       <h1 className="mt-3 text-2xl font-bold">Your tour is booked!</h1>
-      <p className="text-sm text-stone-500">{booking.refs.length} components booked with {new Set(booking.refs.map((r) => r.vendor)).size} vendors. They’ll confirm each one — you’ll see ✓ as they do.</p>
+      <p className="text-sm text-stone-500">{booking.refs.length} components booked with {new Set(booking.refs.map((r) => r.vendor)).size} vendors. They’ll confirm each one, you’ll see ✓ as they do.</p>
       {tour?.coordinator && (
         <Card className="mt-4 flex items-center justify-between p-3 text-left">
           <div>

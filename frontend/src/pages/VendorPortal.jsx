@@ -93,7 +93,7 @@ export default function VendorPortal() {
 
       <div className="-mt-3 space-y-3 px-4">
         <Card className="p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Availability — one tap</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Availability, one tap</div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {[['open', 'Open', 'bg-emerald-600'], ['closed', 'Closed / can’t operate', 'bg-stone-700']].map(([s, label, bg]) => (
               <button key={s} disabled={busy} onClick={() => setStatus({ status: s }, label)}

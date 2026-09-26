@@ -55,7 +55,7 @@ export default function LiveOps() {
     if (m.type === 'change') addLog(`→ ${m.event.tour_code}: pushed “${m.event.label}” with ${m.event.options.length} options`, 'rani')
     else if (m.type === 'change_resolved') addLog(`← ${m.by} ${m.action === 'accept' ? `applied plan ${m.option}` : 'kept original'} (change #${m.event_id})`, 'green')
     else if (m.type === 'vendor_status') addLog('vendor updated availability / a booking')
-    else if (m.type === 'bookings') addLog(`tour booked — requests sent to vendors`, 'green')
+    else if (m.type === 'bookings') addLog(`tour booked, requests sent to vendors`, 'green')
     if (!['hello', 'pong'].includes(m.type)) load()
   })
 

@@ -33,7 +33,7 @@ export function ToursTable({ tours }) {
                 <Td><Chip tone={tone}>{label}</Chip>{t.pending_changes > 0 && <Chip tone="rani" className="ml-1">{t.pending_changes} change</Chip>}</Td>
                 <Td className="text-right font-semibold">{inr(t.pricing.total)}</Td>
                 <Td><Chip tone={t.payments.status === 'paid' ? 'green' : t.payments.status === 'deposit' ? 'amber' : 'stone'}>{t.status === 'draft' ? 'quote' : t.payments.status}</Chip></Td>
-                <Td className="text-xs">{t.status === 'draft' ? '—' : <>{t.confirmations.confirmed} ✓{t.confirmations.pending > 0 && <span className="text-amber-700"> · {t.confirmations.pending} pending</span>}{t.confirmations.declined > 0 && <span className="text-red-600"> · {t.confirmations.declined} declined</span>}</>}</Td>
+                <Td className="text-xs">{t.status === 'draft' ? '-' : <>{t.confirmations.confirmed} ✓{t.confirmations.pending > 0 && <span className="text-amber-700"> · {t.confirmations.pending} pending</span>}{t.confirmations.declined > 0 && <span className="text-red-600"> · {t.confirmations.declined} declined</span>}</>}</Td>
                 <Td className="text-xs">{t.coordinator?.name || <span className="text-stone-400">unassigned</span>}</Td>
               </tr>
             )
@@ -76,7 +76,7 @@ export default function Dashboard() {
         <Kpi label="Booked revenue" value={inr(k.revenue)} />
         <Kpi label="Collected" value={inr(k.collected)} sub={`${inr(k.outstanding)} outstanding`} />
         <Kpi label="Operator margin" value={inr(k.margin)} sub="coordination fees" />
-        <Kpi label="Avg rating" value={k.avg_rating ? `${k.avg_rating}★` : '—'} sub={`${k.open_tasks} open tasks`} />
+        <Kpi label="Avg rating" value={k.avg_rating ? `${k.avg_rating}★` : '-'} sub={`${k.open_tasks} open tasks`} />
       </div>
 
       <Card className="mt-4 p-4">

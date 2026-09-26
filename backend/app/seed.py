@@ -130,7 +130,7 @@ async def reset_and_seed(today: date | None = None) -> dict:
             v = await vendor(name, "transport", None)
             db.add(Offering(vendor_id=v.id, kind="transport", title={"car": "Private car transfers", "train": "Intercity rail tickets",
                                                                       "flight": "Domestic flights"}[mode], mode=mode, price=rate, rating=4.4,
-                            rating_count=900, description=f"{name} — {contact}"))
+                            rating_count=900, description=f"{name}, {contact}"))
         for name, email, ph, city, seg, ints in CUSTOMERS:
             db.add(Customer(name=name, email=email, phone=ph, city=city, segment=seg, interests=ints))
         for name, ph, base, langs in COORDINATORS:
@@ -183,10 +183,10 @@ async def reset_and_seed(today: date | None = None) -> dict:
                             if r.booking_ref and r.booking_ref in t.text:
                                 t.status = "open"
                 db.add(ChatMessage(tour_id=tour.id, role="assistant",
-                                   text=f"Welcome to day 2, {cust.name.split(' ')[0]}! Ask me anything — “what's next?”, “add a cooking class”, or “I'm running late”."))
+                                   text=f"Welcome to day 2, {cust.name.split(' ')[0]}! Ask me anything, “what's next?”, “add a cooking class”, or “I'm running late”."))
             if life == "reviewed":
                 tour.status = "reviewed"
-                tour.review = {"overall": 5, "text": "Seamless from start to finish — the coordinator re-planned our desert day in minutes when the jeep broke down.",
+                tour.review = {"overall": 5, "text": "Seamless from start to finish, the coordinator re-planned our desert day in minutes when the jeep broke down.",
                                "at": (start + timedelta(days=days + 1)).isoformat()}
                 for r in rows:
                     if r.kind == "activity":

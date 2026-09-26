@@ -13,7 +13,7 @@ const SUGGEST = {
   review: ['How much did I spend?'],
 }
 
-// Assist: a conversational layer over the same planning engine — it can read, change and replan the tour.
+// Assist: a conversational layer over the same planning engine, it can read, change and replan the tour.
 export default function Assist() {
   const { tour, state, refresh, notify } = useTour()
   const [msgs, setMsgs] = useState(null)
@@ -50,7 +50,7 @@ export default function Assist() {
       </header>
       <div className="flex-1 space-y-2 px-4">
         {msgs === null && <Spinner />}
-        {msgs?.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-stone-600 ring-1 ring-stone-200">Hi! Ask me about your schedule, costs, or tell me what to change — I’ll update the plan and the bookings.</p>}
+        {msgs?.length === 0 && <p className="rounded-xl bg-white p-3 text-sm text-stone-600 ring-1 ring-stone-200">Hi! Ask me about your schedule, costs, or tell me what to change, I’ll update the plan and the bookings.</p>}
         {msgs?.map((m) => (
           <div key={m.id} className={cx('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
             <div className={cx('max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-[14px] leading-snug shadow-sm',

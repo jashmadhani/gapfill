@@ -23,13 +23,13 @@ const NAV = [
   ['/operator/people', 'Customers & team', Users], ['/operator/payments', 'Payments', Wallet], ['/operator/model', 'Planning model', BrainCircuit],
 ]
 
-// Operator console: one place to run every customised tour — lifecycle, vendors, coordinators, payments and live changes.
+// Operator console: one place to run every customised tour, lifecycle, vendors, coordinators, payments and live changes.
 export default function OperatorApp() {
   const [tick, setTick] = useState(0)
   const [flash, setFlash] = useState(null)
   const live = useLive((m) => {
     if (['hello', 'pong'].includes(m.type)) return
-    if (m.type === 'change') { setFlash(`${m.event.tour_code}: ${m.event.label} — options sent to traveler`); setTimeout(() => setFlash(null), 5000) }
+    if (m.type === 'change') { setFlash(`${m.event.tour_code}: ${m.event.label}, options sent to traveler`); setTimeout(() => setFlash(null), 5000) }
     setTick((t) => t + 1)
   })
   return (

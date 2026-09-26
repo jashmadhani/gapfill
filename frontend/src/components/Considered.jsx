@@ -119,7 +119,7 @@ export default function Considered({ tour, editable, onChanged }) {
     <section aria-labelledby="considered-h" className="space-y-3">
       <div>
         <h2 id="considered-h" className="font-display text-2xl">Considered, not added</h2>
-        <p className="text-sm text-stone-500">Everything else we looked at for your group — and why it didn’t make the plan. Add it or swap it in.</p>
+        <p className="text-sm text-stone-500">Everything else we looked at for your group, and why it didn’t make the plan. Add it or swap it in.</p>
       </div>
       {tour.considered.map((city) => (
         <Card key={city.dest} className="overflow-hidden">

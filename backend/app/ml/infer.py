@@ -58,7 +58,7 @@ def to_fit(score: float) -> int:
 
 
 def veto(member: dict, place: dict) -> str | None:
-    """Hard safety/access rules — never left to a model."""
+    """Hard safety/access rules, never left to a model."""
     age = member.get("age", 35)
     if age < (place.get("min_age") or 0):
         return f"minimum age {int(place['min_age'])}"

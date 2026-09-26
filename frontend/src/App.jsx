@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Compass, Map, MessageCircle, Plane } from 'lucide-react'
 import { TourProvider, useTour } from './store'
@@ -61,10 +62,18 @@ function TravelerShell({ children }) {
   )
 }
 
+// Every screen opens at the top (the browser keeps the old scroll position otherwise).
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  useEffect(() => { window.scrollTo(0, 0) }, [pathname])
+  return null
+}
+
 export default function App() {
   const T = (el) => <TravelerShell>{el}</TravelerShell>
   return (
     <TourProvider>
+      <ScrollToTop />
       <Routes>
         <Route path="/" element={T(<Discover />)} />
         <Route path="/destination/:key" element={T(<DestinationDetail />)} />

@@ -95,7 +95,7 @@ def policy_text(i: dict) -> str:
 
 
 def cancel_fee(tour: Tour, i: dict, st: AppState, cause: str) -> float:
-    """What the traveler pays when a booked component is cancelled. Only traveler-caused changes are charged —
+    """What the traveler pays when a booked component is cancelled. Only traveler-caused changes are charged,
     vendor failures, weather and transport disruptions are waived under the operator's disruption cover."""
     if cause != "traveler" or i.get("status") not in ("booked", "disrupted"):
         return 0
@@ -158,7 +158,7 @@ async def retire_row(db, tour: Tour, row: TourItem, st: AppState, cause: str, st
                         start_min=row.start_min, end_min=row.start_min, price=fee, unit_price=fee, qty=1, status="booked",
                         meta={"for": row.id}))
     if was_booked and row.booking_ref:
-        await add_task(db, "cancel", f"Cancel {row.booking_ref}: {row.title}{' — ' + note if note else ''}", tour.id, row.vendor_id, tour.coordinator_id)
+        await add_task(db, "cancel", f"Cancel {row.booking_ref}: {row.title}{', ' + note if note else ''}", tour.id, row.vendor_id, tour.coordinator_id)
     return fee
 
 
@@ -167,7 +167,7 @@ async def retime_row(db, tour: Tour, row: TourItem, day: int, st_min: int, en_mi
     row.day, row.start_min, row.end_min = day, st_min, en_min
     if moved and row.booking_ref:
         row.vendor_status = "pending"
-        await add_task(db, "notify", f"Reschedule {row.booking_ref}: {row.title} → day {day} {P.label(st_min)}{' — ' + note if note else ''}",
+        await add_task(db, "notify", f"Reschedule {row.booking_ref}: {row.title} → day {day} {P.label(st_min)}{', ' + note if note else ''}",
                        tour.id, row.vendor_id, tour.coordinator_id)
 
 
@@ -196,7 +196,7 @@ def risks(tour: Tour, items: list, ctx: dict, st: AppState) -> list:
                             "text": f"Tight connection on day {d}: {gap} min from arrival to {b['title']}. A {60 - gap}+ min delay would miss it."})
         long_leg = next((i for i in day if i["kind"] == "transport" and i["end_min"] - i["start_min"] > 6 * 60), None)
         if long_leg and any(i["kind"] == "activity" and i["start_min"] >= 19 * 60 for i in day):
-            out.append({"level": "low", "item_id": long_leg["id"], "kind": "fatigue", "text": f"Day {d} has a {P.dur_label(long_leg['end_min'] - long_leg['start_min'])} transfer and a late activity — consider a lighter evening."})
+            out.append({"level": "low", "item_id": long_leg["id"], "kind": "fatigue", "text": f"Day {d} has a {P.dur_label(long_leg['end_min'] - long_leg['start_min'])} transfer and a late activity, consider a lighter evening."})
     return out
 
 
@@ -211,7 +211,7 @@ def packing_for(tour: Tour) -> list:
         tips.append("Neutral-coloured clothes and a warm layer for early safaris")
     if "spiritual" in tags or "heritage" in tags:
         tips.append("Shoulders-and-knees covered outfit for temples; easy slip-on shoes")
-    tips.append("Comfortable walking shoes — forts are steep")
+    tips.append("Comfortable walking shoes, forts are steep")
     return tips
 
 

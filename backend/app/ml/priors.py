@@ -1,4 +1,4 @@
-"""Expert assumptions — the domain knowledge the synthetic training data is generated from.
+"""Expert assumptions, the domain knowledge the synthetic training data is generated from.
 
 Every number here is a documented, human-set prior (travel-planning heuristics for Indian heritage tourism).
 The models do not read these tables at inference time: they learn the behaviour from the generated data,

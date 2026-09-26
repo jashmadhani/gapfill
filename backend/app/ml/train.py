@@ -2,10 +2,10 @@
 
     python -m app.ml.train            # from backend/
 
-1. Satisfaction model — predicts how much ONE traveler (age, interests, needs, mood) will enjoy ONE place at a given
+1. Satisfaction model, predicts how much ONE traveler (age, interests, needs, mood) will enjoy ONE place at a given
    time (crowds, heat, rain). HistGradientBoostingRegressor. The planner combines per-person predictions fairly.
-2. Crowd model — predicts busyness 0-100 for a place by hour / weekday / month / weather.
-3. Mood model — reads free text ("the kids are cranky and it's boiling") into mood labels. TF-IDF + logistic regression.
+2. Crowd model, predicts busyness 0-100 for a place by hour / weekday / month / weather.
+3. Mood model, reads free text ("the kids are cranky and it's boiling") into mood labels. TF-IDF + logistic regression.
 
 Evaluation holds out whole PLACES (not rows), so scores reflect places the model has never seen.
 """

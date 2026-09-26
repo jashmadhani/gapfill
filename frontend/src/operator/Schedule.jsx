@@ -29,7 +29,7 @@ export default function Schedule() {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <Link to={`/operator/tours/${t.tour_id}`} className="font-semibold hover:underline">{t.code} · {t.title}</Link>
-                <div className="text-xs text-stone-500"><Users size={11} className="inline" /> {t.customer} · {t.travelers} pax · coordinator {t.coordinator || '—'}</div>
+                <div className="text-xs text-stone-500"><Users size={11} className="inline" /> {t.customer} · {t.travelers} pax · coordinator {t.coordinator || '-'}</div>
                 <div className="text-xs text-stone-500"><BedDouble size={11} className="inline" /> {t.stay || 'Departure day'}</div>
               </div>
               <div className="text-right">

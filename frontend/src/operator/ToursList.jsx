@@ -15,7 +15,7 @@ export default function ToursList() {
   const shown = tours.filter((t) => stage === 'all' || t.stage === stage)
   return (
     <div>
-      <PageHead title="Tours" sub={`${tours.length} customised tours — every one different, all in one place`}>
+      <PageHead title="Tours" sub={`${tours.length} customised tours, every one different, all in one place`}>
         <div className="w-[34rem] max-w-full">
           <Segmented value={stage} onChange={(v) => setParams(v === 'all' ? {} : { stage: v })}
             options={[['all', 'All'], ['plan', 'Planning'], ['prepare', 'Preparing'], ['operate', 'On tour'], ['complete', 'Completed'], ['review', 'Reviewed']].map(([value, label]) => ({ value, label }))} />

@@ -121,7 +121,7 @@ export default function DayTimeline({ d, editable, onRemove, onAction, busy, ris
       </div>
       <ol className="relative">
         <span className="absolute bottom-3 left-[0.62rem] top-5 w-0.5 bg-stone-200" aria-hidden />
-        {items.length === 0 && <li className="py-3 pl-8 text-[15px] text-stone-500">Free day — nothing planned.</li>}
+        {items.length === 0 && <li className="py-3 pl-8 text-[15px] text-stone-500">Free day, nothing planned.</li>}
         {items.map((i) => <ItemRow key={i.id} i={i} editable={editable} onRemove={onRemove} onAction={onAction} busy={busy} compact={compact} now={now}
           risk={risks.find((r) => r.item_id === i.id && ['weather', 'unavailable', 'declined', 'connection'].includes(r.kind))} />)}
       </ol>

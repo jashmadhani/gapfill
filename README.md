@@ -162,8 +162,8 @@ The vendor portal (`/vendor/:id`) has:
   - **Rest blocks** are added automatically, e.g. "Afternoon break for Aarav (5), Paati (68) during the hottest hours".
 - **Split tracks.** When the best option for part of the group can't include everyone (age limit or stairs), the planner runs two experiences in parallel with a meeting time. Example: an Ayurvedic spa for the adults while 7-year-old Tara visits the car museum, meeting at 1:23 PM.
 - **"Considered, not added".** For every city, every experience the planner evaluated but didn't pick is listed, with its group fit, per-person chips and the exact reason:
-  - "Not for Aarav (5) — minimum age 6. Works as a split track for Rohan, Meera, Ishaan, Paati."
-  - "Group fit 56% — below everything planned here."
+  - "Not for Aarav (5): minimum age 6. Works as a split track for Rohan, Meera, Ishaan, Paati."
+  - "Group fit 56%: below everything planned here."
   - "Your day in Jaipur is already full."
   - "Would take you ₹4,200 over budget."
   - "Closed on Friday."
@@ -173,8 +173,8 @@ The vendor portal (`/vendor/:id`) has:
 
   | Tag | Example advice |
   |---|---|
-  | Overcrowded | "Skip it — X is only 30% busy then and suits your group (84% fit)" → **Go to X instead**, or "Much quieter around 8 AM" → **Move to 8 AM** |
-  | Midday heat | "Hot and exposed at this hour — hard on Paati (68). Mornings are cooler." |
+  | Overcrowded | "Skip it: X is only 30% busy then and suits your group (84% fit)" → **Go to X instead**, or "Much quieter around 8 AM" → **Move to 8 AM** |
+  | Midday heat | "Hot and exposed at this hour: hard on Paati (68). Mornings are cooler." |
   | Hidden gem | "Rated 4.9★ by the few who find it, and rarely busy." |
   | Best at sunrise | Quietest and best light early in the morning |
   | Kid favourite / Senior-friendly | Who in your group will love it; seating and few stairs |
@@ -241,7 +241,7 @@ Evaluation holds out whole places, not rows. Eleven hand-written **behaviour tes
 7. On the traveler app, go to **Discover → Design your own tour → Build my tour → Optimise → Compare & swap → Review price & book** to run a brand-new tour from scratch.
 8. Visit **/tours** and open *Golden Triangle Classic* (completed) to leave a review.
 9. **Group-aware planning:** in **/tours** open *Three Generations: Tigers & Forts* (Rohan 45, Meera 43, Ishaan 20, Aarav 5, Paati 68 with step-free needs).
-   - On **Plan**, see *Works for everyone?* (per-person predicted enjoyment and fairness), per-person chips on every stop (tap **Why**), rest blocks, and *Considered, not added* (Amber Fort: "too many stairs for Paati"; block printing: "minimum age 6 — works as a split track").
+   - On **Plan**, see *Works for everyone?* (per-person predicted enjoyment and fairness), per-person chips on every stop (tap **Why**), rest blocks, and *Considered, not added* (Amber Fort: "too many stairs for Paati"; block printing: "minimum age 6: works as a split track").
    - On **Trip**, check in "The kids are cranky and everyone is exhausted" and compare *Tune the day* with *Make it a lighter day*.
    - *Lakes & Palaces Getaway* (upcoming) shows a **split track**: spa for the adults while Tara (7) visits the car museum.
 10. **Operator → Planning model:** walk through the data, accuracy, behaviour tests and the heatmap, then use the playground: set age 68, 1 PM, May and watch the fit drop with "midday heat".
