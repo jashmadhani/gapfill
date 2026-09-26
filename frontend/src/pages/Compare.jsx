@@ -38,7 +38,7 @@ export default function Compare() {
       <h1 className="mt-1 text-2xl font-bold tracking-tight">{it.kind === 'hotel' ? `Stay in ${it.dest_name}` : it.kind === 'transport' ? `${it.from_name} → ${it.dest_name}` : 'Swap this experience'}</h1>
 
       <Card className="mt-3 p-3 ring-2 ring-stone-300">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">Current</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Current</div>
         <div className="mt-0.5 flex items-start justify-between gap-2">
           <div className="flex items-start gap-1.5 font-semibold"><KindIcon item={it} className="mt-0.5 shrink-0 text-stone-400" size={15} /> {it.title}</div>
           <div className="shrink-0 font-semibold">{inr(it.price)}</div>
@@ -67,7 +67,7 @@ export default function Compare() {
               </div>
               <div className="shrink-0 text-right">
                 <div className={cx('font-bold', a.delta > 0 ? 'text-red-600' : a.delta < 0 ? 'text-emerald-600' : 'text-stone-700')}>{a.delta === 0 ? 'same' : signedInr(a.delta_gross)}</div>
-                <div className="text-[10px] text-stone-400">incl. taxes</div>
+                <div className="text-xs text-stone-400">incl. taxes</div>
               </div>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-stone-600">

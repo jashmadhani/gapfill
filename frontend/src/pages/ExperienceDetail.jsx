@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Accessibility, ArrowLeft, Baby, Clock, MapPin, ShieldCheck, Star } from 'lucide-react'
 import { api, inr } from '../api'
 import { useTour } from '../store'
-import { Button, Card, INTEREST, IOBadge, Rating, Spinner, cx } from '../components/ui'
+import { Button, Card, GlassIconButton, INTEREST, IOBadge, Photo, Rating, Spinner, cx } from '../components/ui'
+import { destImage } from '../media'
 
 const WEEKDAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -35,14 +36,18 @@ export default function ExperienceDetail() {
 
   return (
     <div className="pb-4">
-      <div className="bg-gradient-to-br from-rani-600 to-rani-900 px-4 pt-4 pb-6 text-white">
-        <button onClick={() => nav(-1)} className="mb-3 inline-flex items-center gap-1 text-sm text-rani-100"><ArrowLeft size={16} /> Back</button>
-        <div className="flex flex-wrap gap-1.5">{exp.tags.map((t) => <span key={t} className={cx('rounded-full px-2 py-0.5 text-xs', interests.includes(t) ? 'bg-white text-rani-700' : 'bg-white/15')}>{INTEREST[t]?.label || t}</span>)}</div>
-        <h1 className="mt-2 text-2xl font-bold leading-tight">{exp.title}</h1>
-        <p className="mt-1 text-sm text-rani-100">by {exp.vendor_name} · {exp.dest_name}</p>
-      </div>
+      <Photo src={destImage(exp.dest_key || exp.dest_name)} alt={exp.dest_name} scrim="both" className="md:mx-4 md:mt-4 md:rounded-[2rem]">
+        <div className="pt-safe flex min-h-[22rem] flex-col px-4 pb-8 text-white md:px-8">
+          <div className="pt-3"><GlassIconButton label="Back" onClick={() => nav(-1)}><ArrowLeft size={20} /></GlassIconButton></div>
+          <div className="mt-auto">
+            <div className="flex flex-wrap gap-1.5">{exp.tags.map((t) => <span key={t} className={cx('rounded-full px-2.5 py-0.5 text-xs font-medium', interests.includes(t) ? 'bg-white text-rani-700' : 'glass-dark')}>{INTEREST[t]?.label || t}</span>)}</div>
+            <h1 className="font-display mt-2 text-4xl leading-[1.05] md:text-5xl">{exp.title}</h1>
+            <p className="mt-1.5 flex items-center gap-1 text-[15px] text-white/85"><MapPin size={15} aria-hidden /> {exp.dest_name} · by {exp.vendor_name}</p>
+          </div>
+        </div>
+      </Photo>
 
-      <div className="-mt-3 space-y-3 px-4">
+      <div className="relative -mt-5 space-y-3 rounded-t-[2rem] bg-sand-50 px-4 pt-5 md:mt-5 md:rounded-none md:px-6 md:pt-0">
         <Card className="p-4">
           <p className="text-sm leading-relaxed text-stone-700">{exp.description}</p>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -67,7 +72,7 @@ export default function ExperienceDetail() {
               <p className="mt-1 text-sm text-stone-600">{exp.dest_name} isn’t on your route. Add it by building a new tour with this stop.</p>
             ) : (
               <div className="mt-2 flex gap-2">
-                <select value={day} onChange={(e) => setDay(e.target.value)} className="flex-1 rounded-lg bg-sand-50 px-2 py-2 text-sm ring-1 ring-stone-200">
+                <select value={day} onChange={(e) => setDay(e.target.value)} className="min-h-11 flex-1 rounded-full bg-sand-50 px-4 text-sm ring-1 ring-stone-200">
                   <option value="">Best day for me</option>
                   {days.map((d) => <option key={d.day} value={d.day}>Day {d.day} · {d.dest_name}{d.rain && exp.indoor_outdoor === 'outdoor' ? ' (rain)' : ''}</option>)}
                 </select>
@@ -85,7 +90,7 @@ export default function ExperienceDetail() {
           </div>
           <ul className="mt-3 space-y-2">
             {exp.reviews?.map((r, idx) => (
-              <li key={idx} className="rounded-lg bg-stone-50 p-2 text-sm">
+              <li key={idx} className="rounded-2xl bg-stone-50 p-3 text-sm">
                 <div className="flex items-center justify-between text-xs text-stone-500">
                   <span className="inline-flex items-center gap-1">
                     <span className="inline-flex">{Array.from({ length: 5 }, (_, i) => <Star key={i} size={12} className={i < r.rating ? 'fill-amber-400 text-amber-400' : 'text-stone-300'} />)}</span>

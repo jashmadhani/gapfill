@@ -15,7 +15,7 @@ function Phone({ src, title }) {
         {title === 'Traveler' ? <Smartphone size={13} /> : <Store size={13} />} {title}
       </div>
       <div className="rounded-[2.4rem] bg-stone-900 p-2.5 shadow-2xl ring-1 ring-stone-700">
-        <iframe title={title} src={src} className="h-[760px] w-[375px] rounded-[1.9rem] bg-white" />
+        <iframe title={title} src={src} className="h-[min(760px,78dvh)] w-[min(375px,calc(100vw-3rem))] rounded-[1.9rem] bg-white" />
       </div>
     </div>
   )
@@ -172,12 +172,12 @@ export default function LiveOps() {
                 <IndianRupee size={14} /> Cut budget
               </Button>
             </div>
-            <p className="text-[11px] text-stone-500">Current total {inr(tour?.pricing.total)} · budget {inr(tour?.pricing.budget)}</p>
+            <p className="text-xs text-stone-500">Current total {inr(tour?.pricing.total)} · budget {inr(tour?.pricing.budget)}</p>
           </Panel>
 
           <Panel>
             <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-400">Event log</div>
-            <ul className="max-h-52 space-y-1 overflow-y-auto font-mono text-[11px]">
+            <ul className="max-h-52 space-y-1 overflow-y-auto font-mono text-xs">
               {log.length === 0 && <li className="text-stone-500">Waiting for triggers…</li>}
               {log.map((l, i) => (
                 <li key={i} className={{ rani: 'text-rani-200', green: 'text-emerald-300', amber: 'text-amber-300', red: 'text-red-400', stone: 'text-stone-300' }[l.tone]}>
@@ -190,7 +190,7 @@ export default function LiveOps() {
 
         <div className="flex flex-col items-center">
           <Phone title="Vendor" src={`/vendor/${vendorId}?embed=1`} />
-          <Sel value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="mt-2 w-[375px]">
+          <Sel value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="mt-2 w-full max-w-[375px]">
             {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.pending ? ` · ${v.pending} pending` : ''} ({v.status})</option>)}
           </Sel>
         </div>

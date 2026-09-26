@@ -8,7 +8,7 @@ import { PageHead, Td, Th, useOps } from './OperatorApp'
 function Kpi({ label, value, sub, tone }) {
   return (
     <Card className="p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-500">{label}</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">{label}</div>
       <div className={cx('mt-1 text-2xl font-bold', tone)}>{value}</div>
       {sub && <div className="text-xs text-stone-500">{sub}</div>}
     </Card>

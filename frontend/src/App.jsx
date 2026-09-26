@@ -21,34 +21,36 @@ import OperatorApp from './operator/OperatorApp'
 
 function Toast() {
   const { toast } = useTour()
-  if (!toast) return null
-  const tone = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-stone-900' }[toast.tone]
+  const tone = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-stone-900' }[toast?.tone]
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center px-4">
-      <div className={cx('animate-slide-up max-w-sm rounded-xl px-4 py-2.5 text-sm font-medium text-white shadow-lg', tone)}>{toast.msg}</div>
+    <div role="status" aria-live="polite" className="pt-safe pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center px-4">
+      {toast && <div className={cx('animate-slide-up max-w-sm rounded-full px-5 py-3 text-sm font-medium text-white shadow-float', tone)}>{toast.msg}</div>}
     </div>
   )
 }
 
+const TABS = [
+  { to: '/', label: 'Discover', Icon: Compass, end: true },
+  { to: '/plan', label: 'Plan', Icon: Map },
+  { to: '/trip', label: 'Trip', Icon: Plane },
+  { to: '/assist', label: 'Assist', Icon: MessageCircle },
+]
+
 function TravelerShell({ children }) {
   const { error } = useTour()
   const embed = new URLSearchParams(useLocation().search).has('embed')
-  const tabs = [
-    { to: '/', label: 'Discover', Icon: Compass, end: true },
-    { to: '/plan', label: 'Plan', Icon: Map },
-    { to: '/trip', label: 'Trip', Icon: Plane },
-    { to: '/assist', label: 'Assist', Icon: MessageCircle },
-  ]
   return (
-    <div className="mx-auto flex min-h-full max-w-md flex-col bg-sand-50">
-      {error && <div className="bg-red-600 px-4 py-2 text-center text-xs font-medium text-white">{error}</div>}
-      <main className="flex-1 pb-24">{children}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-stone-200 bg-white/95 backdrop-blur">
-        <div className="grid grid-cols-4">
-          {tabs.map(({ to, label, Icon, end }) => (
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col md:max-w-2xl lg:max-w-3xl">
+      {error && <div role="alert" className="bg-red-600 px-4 py-2 text-center text-sm font-medium text-white">{error}</div>}
+      <main className="flex-1 pb-32">{children}</main>
+      {/* Floating frosted tab bar; sits above the iOS home indicator / Android gesture bar. */}
+      <nav aria-label="Main" className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="glass pointer-events-auto mx-auto grid max-w-md grid-cols-4 rounded-full p-1.5 shadow-float ring-1 ring-white/60">
+          {TABS.map(({ to, label, Icon, end }) => (
             <NavLink key={to} to={to + (embed ? '?embed=1' : '')} end={end}
-              className={({ isActive }) => cx('flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium', isActive ? 'text-rani-600' : 'text-stone-500')}>
-              <Icon size={20} /> {label}
+              className={({ isActive }) => cx('flex min-h-12 items-center justify-center gap-1.5 rounded-full text-xs font-semibold transition',
+                isActive ? 'bg-rani-600 text-white shadow-[0_6px_16px_rgb(31_79_143_/_0.35)]' : 'text-stone-500 hover:text-stone-900')}>
+              {({ isActive }) => (<><Icon size={19} aria-hidden /><span className={cx(isActive ? 'inline' : 'sr-only sm:not-sr-only')}>{label}</span></>)}
             </NavLink>
           ))}
         </div>
