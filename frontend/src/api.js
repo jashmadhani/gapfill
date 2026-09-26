@@ -76,4 +76,10 @@ Object.assign(api, {
   mlMetrics: () => req('GET', '/ml/metrics'),
   mlRetrain: () => req('POST', '/ml/retrain'),
   mlPredict: (body) => req('POST', '/ml/predict', body),
+  // Digital Twin  (BASE already prefixes /api, so paths here start after that)
+  dtLiveWeather: (city) => req('GET', `/digital-twin/live-weather?city=${encodeURIComponent(city)}`),
+  dtSimulate: (body) => req('POST', '/digital-twin/simulate', body),
+  dtSocialSignals: (city, rain_mm, temp, condition) =>
+    req('GET', `/digital-twin/social-signals?city=${encodeURIComponent(city)}&rain_mm=${rain_mm}&temp=${temp}&condition=${encodeURIComponent(condition)}`),
+  dtApplyMitigation: (tourId) => req('POST', `/digital-twin/apply-mitigation?tour_id=${tourId}`),
 })

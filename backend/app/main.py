@@ -11,7 +11,7 @@ from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import roads as R
-from . import assist, customize
+from . import assist, customize, digital_twin as DT
 from . import planner as P
 from .adapt import resolve_event, run_trigger
 from .catalog import INTERESTS, PACES, TIERS
@@ -908,6 +908,62 @@ async def task_done(task_id: int, db: AsyncSession = Depends(get_db)):
 @app.get("/coordinators")
 async def coordinators(db: AsyncSession = Depends(get_db)):
     return [{"id": c.id, "name": c.name, "base": c.base} for c in (await db.execute(select(Coordinator))).scalars()]
+
+
+# ---------------------------------------------------------------- digital twin API
+class DigitalTwinSimulateIn(BaseModel):
+    city: str = "Jaipur"
+    rain_mm: float = 0.0
+    temp: float = 30.0
+    storm_duration_hrs: float = 1.0
+    flood_level: str = "None"
+    wind_speed: float = 10.0
+
+
+@app.get("/digital-twin/live-weather")
+async def get_digital_twin_live_weather(city: str = "Jaipur"):
+    return await DT.fetch_live_weather(city)
+
+
+@app.post("/digital-twin/simulate")
+async def simulate_digital_twin(payload: DigitalTwinSimulateIn):
+    return DT.simulate_digital_twin_impact(
+        city=payload.city,
+        rain_mm=payload.rain_mm,
+        temp=payload.temp,
+        storm_duration_hrs=payload.storm_duration_hrs,
+        flood_level=payload.flood_level,
+        wind_speed=payload.wind_speed
+    )
+
+
+class DigitalTwinSocialIn(BaseModel):
+    city: str = "Jaipur"
+    rain_mm: float = 0.0
+    temp: float = 30.0
+    condition: str = "Clear"
+
+
+@app.get("/digital-twin/social-signals")
+async def get_digital_twin_social_signals(city: str = "Jaipur", rain_mm: float = 0.0, temp: float = 30.0, condition: str = "Clear"):
+    signals = DT.generate_social_signals(city, condition, rain_mm, temp)
+    return {"city": city, "signals": signals}
+
+
+@app.post("/digital-twin/apply-mitigation")
+async def apply_digital_twin_mitigation(tour_id: int, db: AsyncSession = Depends(get_db)):
+    t = await tour_or_404(db, tour_id)
+    st = await get_state(db)
+    # Trigger a weather disruption event on the active tour via the adapt engine
+    events, note = await run_trigger(
+        db,
+        {"trigger_type": "rain", "source": "digital_twin", "tour_id": tour_id},
+        tour_id
+    )
+    await db.commit()
+    await after_events(db, events)
+    await tour_changed(tour_id, reason="digital_twin_mitigation")
+    return {"ok": True, "triggered_events_count": len(events), "note": note}
 
 
 # ---------------------------------------------------------------- live channel

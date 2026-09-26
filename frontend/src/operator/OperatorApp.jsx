@@ -1,6 +1,6 @@
-import { createContext, useContext, useState } from 'react'
+﻿import { createContext, useContext, useState } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
-import { BrainCircuit, CalendarDays, ClipboardList, LayoutDashboard, Map, MonitorPlay, Radio, Shuffle, Store, Users, Wallet } from 'lucide-react'
+import { BrainCircuit, CalendarDays, ClipboardList, CloudLightning, LayoutDashboard, Map, MonitorPlay, Radio, Shuffle, Store, Users, Wallet } from 'lucide-react'
 import { useLive } from '../live'
 import { cx } from '../components/ui'
 import Dashboard from './Dashboard'
@@ -13,6 +13,7 @@ import People from './People'
 import Payments from './Payments'
 import Tasks from './Tasks'
 import Model from './Model'
+import DigitalTwin from './DigitalTwin'
 
 const OpsCtx = createContext({ tick: 0 })
 export const useOps = () => useContext(OpsCtx)
@@ -21,6 +22,7 @@ const NAV = [
   ['/operator', 'Dashboard', LayoutDashboard, true], ['/operator/tours', 'Tours', Map], ['/operator/schedule', 'Today’s operations', CalendarDays],
   ['/operator/changes', 'Changes', Shuffle], ['/operator/tasks', 'Coordination', ClipboardList], ['/operator/vendors', 'Vendors', Store],
   ['/operator/people', 'Customers & team', Users], ['/operator/payments', 'Payments', Wallet], ['/operator/model', 'Planning model', BrainCircuit],
+  ['/operator/digital-twin', 'Digital Twin', CloudLightning],
 ]
 
 // Operator console: one place to run every customised tour, lifecycle, vendors, coordinators, payments and live changes.
@@ -70,6 +72,7 @@ export default function OperatorApp() {
               <Route path="people" element={<People />} />
               <Route path="payments" element={<Payments />} />
               <Route path="model" element={<Model />} />
+              <Route path="digital-twin" element={<DigitalTwin />} />
             </Routes>
           </main>
         </div>
