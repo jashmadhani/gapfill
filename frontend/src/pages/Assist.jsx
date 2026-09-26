@@ -108,9 +108,12 @@ export default function Assist() {
 
       {/* Pill input: a leading "+" placeholder for attachments, a trailing mic that swaps to send
           once there is text to send. The mic itself does nothing yet — voice capture is a later,
-          backend-dependent piece; this just reserves its place in the UI. */}
-      <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 bg-white px-5 pb-3 pt-2 lg:bottom-0">
-        <form onSubmit={(e) => { e.preventDefault(); send() }} className="mx-auto flex max-w-2xl items-center gap-2 rounded-full bg-stone-100 py-1.5 pl-1.5 pr-2">
+          backend-dependent piece; this just reserves its place in the UI.
+          On phones it floats as its own pill above the floating tab bar (matching that bar's own
+          language) instead of a flush white strip sitting right on top of it — two stacked bars
+          read as competing nav bars, one floating pill sitting above another doesn't. */}
+      <div className="sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 flex justify-center px-4 lg:static lg:block lg:bg-white lg:px-5 lg:pb-3 lg:pt-2">
+        <form onSubmit={(e) => { e.preventDefault(); send() }} className="mx-auto flex w-full max-w-2xl items-center gap-2 rounded-full bg-stone-100 py-1.5 pl-1.5 pr-2 shadow-float ring-1 ring-white/70 lg:shadow-none lg:ring-0">
           <button type="button" aria-label="Attach" className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-stone-500 hover:bg-stone-200"><Plus size={20} /></button>
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Got questions…"
             className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-stone-500 focus:outline-none" />
