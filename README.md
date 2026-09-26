@@ -6,7 +6,9 @@ Travelers design their own tour instead of picking a fixed package. They set dat
 
 The whole lifecycle is covered: **Discover → Personalize → Plan → Price → Book → Prepare → Operate → Assist → Adapt → Complete → Review**.
 
-Everything runs offline and deterministically. The trip assistant can optionally use Claude (see below).
+Planning is **group-aware and ML-driven**. You describe the group as people (a 5-year-old, a 20-year-old, a 45-year-old and a 68-year-old who needs step-free access). Trained models predict how much each person will enjoy each place at a given time, crowd, heat and mood. The planner then builds a day that is fair to everyone, and explains every choice, including what it left out and why.
+
+Everything runs offline and deterministically; the models ship pre-trained. The trip assistant can optionally use Claude (see below).
 
 ## Quick start
 
@@ -64,6 +66,14 @@ The smoke test runs the whole lifecycle through the API:
 - Eight assistant intents
 - Every operator endpoint
 - Review
+- Group-aware planning: a three-generation group with a step-free senior. The test asserts nobody is ever booked into something unsafe for them, rest blocks exist, and the "considered, not added" list is populated.
+- Mood check-in from free text, the ML endpoints, and that swaps, additions, removals and reviews produce feedback rows for retraining
+
+To retrain the models (about 1 minute):
+
+```bash
+cd backend && .venv/bin/python -m app.ml.train
+```
 
 ## Requirements → what was built
 
@@ -139,22 +149,109 @@ The vendor portal (`/vendor/:id`) has:
 - Notifications from the operator (cancellations, reschedules, late arrivals).
 - Stats: bookings, booked value and rating.
 
+## Group-aware planning and the ML models
+
+### What the traveler sees
+
+- **The group as people.** Personalize collects each traveler's name, age, optional personal interests, step-free need and afternoon-rest need. Presets include "3 generations" (5 / 20 / 45 / 68). A free-text mood box ("the kids are restless and we're tired") is read by the mood model as you type.
+- **Per-person fit on every experience.** Each item shows one chip per traveler with their predicted enjoyment (for example `Aarav 5 · 84%`, `Paati 68 · 89% ★`), or "not for them" when a safety rule applies. **Why** explains the prediction, e.g. "held back by lots of stairs, midday heat".
+- **Fair days.**
+  - The group score is 60% of the weighted average plus 40% of the least-happy member.
+  - A fairness tracker boosts whoever has been under-served on later days.
+  - The pace follows the most vulnerable member: fewer stops, one high-intensity stop a day, and an earlier finish for young children and seniors.
+  - **Rest blocks** are added automatically, e.g. "Afternoon break for Aarav (5), Paati (68) during the hottest hours".
+- **Split tracks.** When the best option for part of the group can't include everyone (age limit or stairs), the planner runs two experiences in parallel with a meeting time. Example: an Ayurvedic spa for the adults while 7-year-old Tara visits the car museum, meeting at 1:23 PM.
+- **"Considered, not added".** For every city, every experience the planner evaluated but didn't pick is listed, with its group fit, per-person chips and the exact reason:
+  - "Not for Aarav (5) — minimum age 6. Works as a split track for Rohan, Meera, Ishaan, Paati."
+  - "Group fit 56% — below everything planned here."
+  - "Your day in Jaipur is already full."
+  - "Would take you ₹4,200 over budget."
+  - "Closed on Friday."
+
+  Each entry has **Add** (auto-slotted into a day) and **Replace…** (pick what it replaces and see the predicted fit gain).
+- **Smart tags with advice.** Generated from the model outputs, each with a comment and, where useful, a one-tap fix:
+
+  | Tag | Example advice |
+  |---|---|
+  | Overcrowded | "Skip it — X is only 30% busy then and suits your group (84% fit)" → **Go to X instead**, or "Much quieter around 8 AM" → **Move to 8 AM** |
+  | Midday heat | "Hot and exposed at this hour — hard on Paati (68). Mornings are cooler." |
+  | Hidden gem | "Rated 4.9★ by the few who find it, and rarely busy." |
+  | Best at sunrise | Quietest and best light early in the morning |
+  | Kid favourite / Senior-friendly | Who in your group will love it; seating and few stairs |
+  | Pricey for the fit | High price for a low group fit |
+  | Book ahead | Very popular or small capacity |
+
+- **Daily mood check-in** (Trip tab or the assistant: "we're exhausted"). The mood model reads the text and the rest of the day (or tomorrow, if nothing is left today) is re-scored. The traveler gets options through the usual change card: *Tune the day to the mood*, *Make it a lighter day* (drop the most tiring stop and add a rest break) or *Add something* when the group feels energetic.
+- The experience page shows **How it suits your group** (per-person fit, best time, tags) and the **hourly crowd forecast**. Compare and Discover show group fit too.
+
+### The models (`backend/app/ml/`)
+
+| Model | Predicts | Algorithm | Held-out result |
+|---|---|---|---|
+| Satisfaction | One person's enjoyment (1–5) of one place, given age, interests, step-free need, mood, time, crowd, heat, rain | `HistGradientBoostingRegressor` | MAE **0.32** on places never seen in training (predict-the-average: 0.65; Google-rating-only: 0.61), R² 0.76 |
+| Crowd | Busyness 0–100 by hour, weekday, month, weather | `HistGradientBoostingRegressor` | MAE 5.5 points, R² 0.88 |
+| Mood | Mood labels from free text | TF-IDF (words + characters) + one-vs-rest logistic regression | F1 0.89 on hand-written sentences it never saw |
+
+**Hard safety rules are never left to a model.** Minimum age, stairs for someone who needs step-free access, and places not suitable for young children are vetoes. The model predicts enjoyment; the rules decide eligibility; the planner decides the day.
+
+### Training data
+
+1. **Real data.** The Kaggle *Top Indian Places to Visit* dataset (325 attractions with Google ratings, review counts, entrance fees, visit durations, best time and weekly offs) is at `app/ml/data/`.
+   - It supplies the population of real places the models learn from.
+   - 16 of its attractions in our cities (Red Fort, Qutub Minar, Hawa Mahal, Jaigarh Fort…) are imported into the catalogue as self-guided visits.
+   - It supplies popularity for curated experiences it matches.
+2. **Expert assumptions** (`app/ml/priors.py`), documented and editable:
+   - life-stage profiles (energy, stairs, heat and crowd tolerance, walking, attention span, bedtime)
+   - how much each life stage enjoys each kind of place
+   - physical profiles per place type
+   - hourly crowd patterns by category, season multipliers and midday heat by month
+   - the effect of each mood
+
+   Curated experiences also carry expert-assessed effort, stairs, walking, seating, shade and minimum age (`catalog.py`).
+3. **Synthetic data** (`app/ml/synth.py`). Simulated travelers "visit" the real places:
+   - 120,000 satisfaction rows and 60,000 crowd rows, scored by a latent function built from the priors plus noise and personal taste.
+   - A mood corpus of 6,000 sentences built from expert phrases.
+4. **Real feedback** (`feedback` table). Every review, swap-in, swap-out, addition and removal stores the exact model input and an implied rating. **Retrain** (operator console → Planning model) mixes these in at 5× weight, so the model drifts from the priors toward how real travelers behave.
+
+Evaluation holds out whole places, not rows. Eleven hand-written **behaviour tests** must pass after every retrain, for example:
+
+- "a 5-year-old scores a zipline with minimum age 10 near the floor"
+- "midday May heat hurts a senior outdoors more than a January morning"
+- "a tired mood lowers an intense fort"
+
+**Operator console → Planning model** shows:
+
+- training data by source
+- accuracy against the baselines
+- behaviour test results
+- permutation feature importance
+- a heatmap of what the model learned (life stage × kind of place)
+- the mood model's reading of the natural sentences
+- a **playground** where you set age, time, month, rain, step-free and mood and watch a prediction and its reasons change
+- version history, with a **Retrain** button
+
 ## 2-minute demo script
 
 1. Open **/ops** and press **Reset demo data**. It is day 2 of Aanya's *Royal Rajasthan for Two* (Jaipur → Jodhpur → Udaipur), 11:30 AM.
-2. **Weather → Make it rain** (Day 2 · Jaipur). The traveler phone shows the card: the outdoor Nahargarh sunset is affected. Option A swaps in Albert Hall Museum and re-times the cooking class to make room. Apply it; the vendor gets a cancel task and the new vendor gets a confirmation request.
+2. **Weather → Make it rain** (Day 2 · Jaipur). The traveler phone shows the card: the outdoor Nahargarh sunset is affected. Option A swaps in the indoor block-printing workshop at the same time. Apply it; the vendor gets a cancel task and the new vendor gets a confirmation request.
 3. **Transport → Delay 120 min** on the day-3 train. The impact lists the photo walk you would miss and the hotel's late check-in. Compare "Wait it out" (drops the walk, refund) with "Switch to car" (+₹4.8k, nothing lost).
 4. In the **Vendor** phone, **Decline** a request. The traveler immediately gets replacement options.
 5. **Cut budget** to ₹90,000. Compare downgrade stays / trim experiences / balanced, with the "still over budget" flag.
 6. Open **/operator**. The dashboard, alerts, change history, coordination tasks and payments all reflect what just happened.
 7. On the traveler app, go to **Discover → Design your own tour → Build my tour → Optimise → Compare & swap → Review price & book** to run a brand-new tour from scratch.
 8. Visit **/tours** and open *Golden Triangle Classic* (completed) to leave a review.
+9. **Group-aware planning:** in **/tours** open *Three Generations: Tigers & Forts* (Rohan 45, Meera 43, Ishaan 20, Aarav 5, Paati 68 with step-free needs).
+   - On **Plan**, see *Works for everyone?* (per-person predicted enjoyment and fairness), per-person chips on every stop (tap **Why**), rest blocks, and *Considered, not added* (Amber Fort: "too many stairs for Paati"; block printing: "minimum age 6 — works as a split track").
+   - On **Trip**, check in "The kids are cranky and everyone is exhausted" and compare *Tune the day* with *Make it a lighter day*.
+   - *Lakes & Palaces Getaway* (upcoming) shows a **split track**: spa for the adults while Tara (7) visits the car museum.
+10. **Operator → Planning model:** walk through the data, accuracy, behaviour tests and the heatmap, then use the playground: set age 68, 1 PM, May and watch the fit drop with "midday heat".
 
 ## Tech
 
 | Part | Stack |
 |---|---|
 | Backend | FastAPI, SQLAlchemy async (SQLite / Postgres), WebSocket hub for live updates |
+| ML | scikit-learn (gradient boosting, TF-IDF + logistic regression), NumPy, joblib |
 | Frontend | React 19, React Router, Tailwind v4, lucide icons, Vite |
 | Live channel | WebSocket with auto-reconnect and a 4s polling fallback |
 
@@ -162,8 +259,10 @@ Backend modules:
 
 | File | Responsibility |
 |---|---|
-| `backend/app/catalog.py` | Seed catalogue: 8 destinations, 43 experiences, 32 hotels, 3 transport partners, customers, coordinators |
-| `backend/app/planner.py` | Recommendations, routing, scheduling, pricing, optimisation, conflicts, alternatives |
+| `backend/app/catalog.py` | Seed catalogue: 8 destinations, 46 curated experiences (+16 imported from Kaggle), 32 hotels, 3 transport partners, customers, coordinators, expert place profiles |
+| `backend/app/ml/` | Kaggle data, expert priors, synthetic data generator, training + evaluation, inference (per-person fit, explanations, crowd, mood) |
+| `backend/app/insights.py` | Per-person fit chips, smart tags with advice, "considered, not added", fairness summary, feedback logging |
+| `backend/app/planner.py` | Recommendations, routing, group-fair ML scheduling (vetoes, rest blocks, split tracks), pricing, optimisation, conflicts, alternatives |
 | `backend/app/adapt.py` | Disruption impact analysis and recovery options |
 | `backend/app/customize.py` | Swap, add, remove, optimise, regenerate |
 | `backend/app/assist.py` | Trip assistant |

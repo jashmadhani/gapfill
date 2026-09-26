@@ -62,6 +62,7 @@ export function TourProvider({ children }) {
       case 'bookings':
         if (mine) refresh()
         break
+      case 'model_retrained':
       case 'clock':
       case 'world':
       case 'vendor_status':

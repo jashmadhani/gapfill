@@ -76,6 +76,17 @@ class Offering(Base):
     capacity: Mapped[int] = mapped_column(Integer, default=20)
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed | full
     amenities: Mapped[list] = mapped_column(JSON, default=list)
+    # physical / crowd profile used by the ML models (activities only)
+    category: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    intensity: Mapped[float] = mapped_column(Float, default=2)
+    stairs: Mapped[float] = mapped_column(Float, default=0.3)
+    walk_km: Mapped[float] = mapped_column(Float, default=1.5)
+    seating: Mapped[float] = mapped_column(Float, default=0.3)
+    shade: Mapped[float] = mapped_column(Float, default=0.3)
+    min_age: Mapped[int] = mapped_column(Integer, default=0)
+    popularity: Mapped[float] = mapped_column(Float, default=0.1)  # Google reviews, in lakh
+    best_time: Mapped[str] = mapped_column(String(12), default="all")
+    source: Mapped[str] = mapped_column(String(16), default="curated")  # curated | kaggle
 
 
 class Customer(Base):
@@ -123,7 +134,7 @@ class TourItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id"), index=True)
     day: Mapped[int] = mapped_column(Integer)
-    kind: Mapped[str] = mapped_column(String(16))  # activity | hotel | transport | fee
+    kind: Mapped[str] = mapped_column(String(16))  # activity | hotel | transport | fee | rest
     offering_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     vendor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     title: Mapped[str] = mapped_column(String(200))
@@ -203,4 +214,18 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(12))  # user | assistant
     text: Mapped[str] = mapped_column(Text)
     data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Feedback(Base):
+    """Real traveler signals that retrain the satisfaction model: ratings, swaps, skips, additions."""
+    __tablename__ = "feedback"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    offering_id: Mapped[int] = mapped_column(Integer, index=True)
+    member: Mapped[str] = mapped_column(String(80), default="")
+    age: Mapped[int] = mapped_column(Integer, default=35)
+    rating: Mapped[float] = mapped_column(Float)
+    signal: Mapped[str] = mapped_column(String(16))  # review | added | swap_in | swap_out | removed
+    features: Mapped[list] = mapped_column(JSON, default=list)  # the exact model input at the time
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

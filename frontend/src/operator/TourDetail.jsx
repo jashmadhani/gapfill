@@ -86,7 +86,10 @@ export default function TourDetail() {
               <div><div className="text-xs uppercase tracking-wide text-stone-500">Route</div><div className="font-medium">{t.route.map((r) => `${r.name} (${r.nights}N)`).join(' → ')}</div></div>
               <div><div className="text-xs uppercase tracking-wide text-stone-500">Preferences</div><div className="font-medium">{TIER_LABEL[t.prefs.hotel_tier]} · {MODE[t.prefs.transport]?.label} · {PACE_LABEL[t.prefs.pace]}{t.prefs.needs?.step_free ? ' · step-free' : ''}</div></div>
               <div><div className="text-xs uppercase tracking-wide text-stone-500">Interests</div><div className="flex flex-wrap gap-1">{t.prefs.interests.map((i) => <Chip key={i}>{INTEREST[i]?.label}</Chip>)}</div></div>
-              <div><div className="text-xs uppercase tracking-wide text-stone-500">Group</div><div className="font-medium">{t.group.members?.join(', ')}</div></div>
+              <div><div className="text-xs uppercase tracking-wide text-stone-500">Group</div>
+                <div className="flex flex-wrap gap-1">{(t.members || []).map((m) => <Chip key={m.name}>{m.name} {m.age} · {m.band}{m.step_free ? ' · step-free' : ''}</Chip>)}</div></div>
+              {t.group_fit && <div><div className="text-xs uppercase tracking-wide text-stone-500">Predicted fit</div>
+                <div className="flex flex-wrap gap-1">{t.group_fit.members.map((m) => <Chip key={m.name} tone={m.avg >= 75 ? 'green' : m.avg >= 55 ? 'amber' : 'red'}>{m.name} {m.avg}%</Chip>)}<Chip tone="blue">fairness {t.group_fit.fairness}%</Chip></div></div>}
             </div>
           </Card>
 

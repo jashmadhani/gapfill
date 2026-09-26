@@ -1,0 +1,530 @@
+{
+ "version": 1,
+ "trained_at": "2026-09-26T12:48:00+00:00",
+ "seconds": 56.1,
+ "features": [
+  "age",
+  "needs_step_free",
+  "interest_match",
+  "cat_heritage",
+  "cat_museum",
+  "cat_religious",
+  "cat_nature",
+  "cat_wildlife",
+  "cat_adventure",
+  "cat_food",
+  "cat_shopping",
+  "cat_performance",
+  "cat_workshop",
+  "cat_relaxation",
+  "cat_viewpoint",
+  "intensity",
+  "stairs",
+  "walk_km",
+  "seating",
+  "shade",
+  "indoor",
+  "duration_h",
+  "rating",
+  "log_popularity",
+  "kid_friendly",
+  "min_age",
+  "under_min_age",
+  "log_price",
+  "start_hour",
+  "end_hour",
+  "month_heat",
+  "heat_exposure",
+  "crowd",
+  "rain_outdoor",
+  "mood_tired",
+  "mood_energetic",
+  "mood_relaxed",
+  "mood_adventurous",
+  "mood_cultural",
+  "mood_foodie",
+  "mood_romantic",
+  "mood_restless_kids",
+  "mood_hot"
+ ],
+ "satisfaction": {
+  "rows_synthetic": 120000,
+  "rows_feedback": 0,
+  "places": 371,
+  "test_places": 75,
+  "mae": 0.32,
+  "r2": 0.76,
+  "baseline_mean_mae": 0.649,
+  "baseline_rating_only_mae": 0.608,
+  "importance": [
+   {
+    "feature": "Age",
+    "value": 0.2192
+   },
+   {
+    "feature": "Place rating",
+    "value": 0.075
+   },
+   {
+    "feature": "Kind of place",
+    "value": 0.0669
+   },
+   {
+    "feature": "Rain",
+    "value": 0.0647
+   },
+   {
+    "feature": "Interest match",
+    "value": 0.0596
+   },
+   {
+    "feature": "Mood",
+    "value": 0.0573
+   },
+   {
+    "feature": "Physical effort",
+    "value": 0.0509
+   },
+   {
+    "feature": "Duration",
+    "value": 0.0413
+   },
+   {
+    "feature": "Finish time",
+    "value": 0.0299
+   },
+   {
+    "feature": "Stairs",
+    "value": 0.0255
+   },
+   {
+    "feature": "Below minimum age",
+    "value": 0.0232
+   },
+   {
+    "feature": "Crowds",
+    "value": 0.0231
+   },
+   {
+    "feature": "Heat exposure",
+    "value": 0.0155
+   },
+   {
+    "feature": "Indoor / outdoor",
+    "value": 0.0017
+   },
+   {
+    "feature": "Step-free need",
+    "value": 0.0016
+   },
+   {
+    "feature": "Price",
+    "value": 0.0016
+   },
+   {
+    "feature": "Time of day",
+    "value": 0.0013
+   },
+   {
+    "feature": "Walking",
+    "value": 0.001
+   },
+   {
+    "feature": "Seating",
+    "value": 0.0009
+   },
+   {
+    "feature": "Minimum age",
+    "value": 0.0008
+   },
+   {
+    "feature": "Popularity",
+    "value": 0.0007
+   },
+   {
+    "feature": "Shade",
+    "value": 0.0006
+   },
+   {
+    "feature": "Season heat",
+    "value": 0.0003
+   },
+   {
+    "feature": "Kid friendly",
+    "value": 0.0002
+   }
+  ],
+  "tests": [
+   {
+    "test": "A 20-year-old enjoys a zipline more than a 68-year-old",
+    "passed": true
+   },
+   {
+    "test": "A 5-year-old scores a zipline (min age 10) near the floor",
+    "passed": true
+   },
+   {
+    "test": "A 5-year-old enjoys a tiger safari more than a museum",
+    "passed": true
+   },
+   {
+    "test": "Stairs-heavy fort: 70-year-old needing step-free scores lower than a 40-year-old",
+    "passed": true
+   },
+   {
+    "test": "Midday May heat hurts a senior outdoors more than a January morning",
+    "passed": true
+   },
+   {
+    "test": "'Tired' mood lowers an intense fort for adults",
+    "passed": true
+   },
+   {
+    "test": "'Hot' mood favours an indoor museum over an exposed fort at noon",
+    "passed": true
+   },
+   {
+    "test": "Rain hurts outdoor places, not indoor ones",
+    "passed": true
+   },
+   {
+    "test": "A late show (ends ~10:30pm) suits a 25-year-old more than a 6-year-old",
+    "passed": true
+   },
+   {
+    "test": "Heavy crowds lower the score",
+    "passed": true
+   },
+   {
+    "test": "Matching interests raise the score",
+    "passed": true
+   }
+  ],
+  "learned": {
+   "bands": [
+    {
+     "key": "young_child",
+     "label": "Young child",
+     "age": 5
+    },
+    {
+     "key": "child",
+     "label": "Child",
+     "age": 10
+    },
+    {
+     "key": "teen",
+     "label": "Teen",
+     "age": 15
+    },
+    {
+     "key": "young_adult",
+     "label": "Young adult",
+     "age": 24
+    },
+    {
+     "key": "adult",
+     "label": "Adult",
+     "age": 45
+    },
+    {
+     "key": "senior",
+     "label": "Senior",
+     "age": 67
+    },
+    {
+     "key": "elder",
+     "label": "Elder",
+     "age": 80
+    }
+   ],
+   "categories": [
+    "heritage",
+    "museum",
+    "religious",
+    "nature",
+    "wildlife",
+    "adventure",
+    "food",
+    "shopping",
+    "performance",
+    "workshop",
+    "relaxation",
+    "viewpoint"
+   ],
+   "fit": [
+    [
+     27,
+     50,
+     44,
+     64,
+     62,
+     24,
+     49,
+     48,
+     65,
+     52,
+     50,
+     48
+    ],
+    [
+     62,
+     64,
+     55,
+     73,
+     78,
+     60,
+     65,
+     61,
+     72,
+     71,
+     66,
+     64
+    ],
+    [
+     61,
+     56,
+     54,
+     66,
+     67,
+     79,
+     65,
+     68,
+     66,
+     61,
+     61,
+     68
+    ],
+    [
+     68,
+     63,
+     60,
+     70,
+     72,
+     81,
+     75,
+     69,
+     71,
+     67,
+     68,
+     75
+    ],
+    [
+     70,
+     67,
+     61,
+     69,
+     70,
+     60,
+     72,
+     67,
+     69,
+     68,
+     69,
+     68
+    ],
+    [
+     53,
+     68,
+     65,
+     70,
+     68,
+     20,
+     68,
+     64,
+     68,
+     69,
+     70,
+     65
+    ],
+    [
+     22,
+     56,
+     55,
+     61,
+     57,
+     7,
+     56,
+     49,
+     56,
+     60,
+     62,
+     51
+    ]
+   ]
+  }
+ },
+ "crowd": {
+  "rows": 60000,
+  "mae": 5.45,
+  "r2": 0.88,
+  "baseline_mean_mae": 15.84
+ },
+ "mood": {
+  "rows": 6000,
+  "f1_heldout": 1.0,
+  "f1_natural": 0.889,
+  "natural_examples": [
+   {
+    "text": "We barely slept on the train and my knees hurt",
+    "expected": [
+     "tired"
+    ],
+    "predicted": [
+     "tired"
+    ]
+   },
+   {
+    "text": "Grandma is worn out, can we keep today light?",
+    "expected": [
+     "tired",
+     "relaxed"
+    ],
+    "predicted": [
+     "tired"
+    ]
+   },
+   {
+    "text": "The kids are climbing the walls, they need something fun",
+    "expected": [
+     "restless_kids"
+    ],
+    "predicted": [
+     "restless_kids"
+    ]
+   },
+   {
+    "text": "It's 42 degrees, we can't be outside",
+    "expected": [
+     "hot"
+    ],
+    "predicted": [
+     "hot"
+    ]
+   },
+   {
+    "text": "We're starving, anything local and tasty?",
+    "expected": [
+     "foodie"
+    ],
+    "predicted": [
+     "energetic",
+     "foodie"
+    ]
+   },
+   {
+    "text": "Feeling adventurous, bored of forts",
+    "expected": [
+     "adventurous"
+    ],
+    "predicted": [
+     "energetic",
+     "adventurous"
+    ]
+   },
+   {
+    "text": "Our anniversary is tonight, something special for two",
+    "expected": [
+     "romantic"
+    ],
+    "predicted": [
+     "romantic"
+    ]
+   },
+   {
+    "text": "Everyone slept well and is ready for a big day",
+    "expected": [
+     "energetic"
+    ],
+    "predicted": [
+     "tired",
+     "energetic"
+    ]
+   },
+   {
+    "text": "I'd love to understand the history of this place",
+    "expected": [
+     "cultural"
+    ],
+    "predicted": [
+     "cultural"
+    ]
+   },
+   {
+    "text": "Can we just have a calm afternoon away from the crowds",
+    "expected": [
+     "relaxed"
+    ],
+    "predicted": [
+     "relaxed"
+    ]
+   },
+   {
+    "text": "The toddler is cranky and it's really hot",
+    "expected": [
+     "restless_kids",
+     "hot"
+    ],
+    "predicted": [
+     "restless_kids",
+     "hot"
+    ]
+   },
+   {
+    "text": "Exhausted but hungry",
+    "expected": [
+     "tired",
+     "foodie"
+    ],
+    "predicted": [
+     "tired",
+     "foodie"
+    ]
+   },
+   {
+    "text": "What time does the safari start?",
+    "expected": [],
+    "predicted": []
+   },
+   {
+    "text": "Show me tomorrow's plan",
+    "expected": [],
+    "predicted": []
+   },
+   {
+    "text": "We want thrills today!",
+    "expected": [
+     "adventurous"
+    ],
+    "predicted": [
+     "adventurous"
+    ]
+   },
+   {
+    "text": "Please somewhere with AC, the heat is unbearable",
+    "expected": [
+     "hot"
+    ],
+    "predicted": [
+     "hot"
+    ]
+   }
+  ]
+ },
+ "data": {
+  "kaggle_places": 325,
+  "catalogue_places": 46,
+  "synthetic_satisfaction_rows": 120000,
+  "synthetic_crowd_rows": 60000,
+  "mood_sentences": 6000,
+  "feedback_rows": 0
+ },
+ "history": [
+  {
+   "version": 1,
+   "at": "2026-09-26T12:48:00+00:00",
+   "mae": 0.32,
+   "feedback_rows": 0
+  }
+ ]
+}

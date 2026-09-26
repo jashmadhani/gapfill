@@ -15,7 +15,9 @@ from . import planner as P
 from .adapt import resolve_event, run_trigger
 from .catalog import INTERESTS, PACES, TIERS
 from .db import SessionLocal, backend_name, engine, get_db
-from .models import (ChangeEvent, ChatMessage, Coordinator, Customer, Offering, Payment, Review, Task, Tour, TourItem,
+from .insights import log_feedback
+from .ml import infer as ML
+from .models import (ChangeEvent, ChatMessage, Coordinator, Customer, Feedback, Offering, Payment, Review, Task, Tour, TourItem,
                      Vendor)
 from .seed import reset_and_seed
 from .services import (book_tour, ctx_for, current_day, get_state, item_dict, load_items, payments_summary, ser_item,
@@ -49,9 +51,10 @@ hub = Hub()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.connect() as conn:
-        has = await conn.run_sync(lambda c: sa_inspect(c).has_table("app_state"))
+        has = await conn.run_sync(lambda c: sa_inspect(c).has_table("feedback"))
     if not has:
         await reset_and_seed()
+    ML.models()  # load (or train, first time) the ML models before serving
     async with SessionLocal() as db:
         await P.load_world(db)
     yield
@@ -109,6 +112,30 @@ class PlanIn(BaseModel):
     interests: list[str] = Field(default_factory=list)
     pace: str = "balanced"
     needs: dict = Field(default_factory=dict)
+    members: list[dict] = Field(default_factory=list)  # [{name, age, interests, step_free, rest}]
+    mood: list[str] = Field(default_factory=list)
+    mood_text: str = ""
+
+
+class MoodIn(BaseModel):
+    text: str = ""
+    moods: list[str] = Field(default_factory=list)
+
+
+class RetimeIn(BaseModel):
+    start_min: int
+
+
+class PredictIn(BaseModel):
+    offering_id: int
+    age: int = 35
+    interests: list[str] = Field(default_factory=list)
+    step_free: bool = False
+    moods: list[str] = Field(default_factory=list)
+    start: str = "10:00"
+    month: int = 11
+    rain: bool = False
+    weekday: int = 5
 
 
 class SwapIn(BaseModel):
@@ -143,6 +170,8 @@ class TourPatch(BaseModel):
 
 class TriggerIn(BaseModel):
     trigger_type: str
+    moods: list[str] = Field(default_factory=list)
+    text: str = ""
     tour_id: int | None = None
     item_id: int | None = None
     offering_id: int | None = None
@@ -239,9 +268,19 @@ async def discover(interests: str = "", db: AsyncSession = Depends(get_db)):
     if not ints and st.active_tour_id:
         tour = await db.get(Tour, st.active_tour_id)
         ints = (tour.prefs or {}).get("interests", [])
-    return {"interests": ints, "destinations": P.recommend_destinations(ints),
-            "experiences": [ser_offering(o, brief=True) | {"reason": P.fit_reason(o, {"interests": ints})}
-                            for o in P.recommend_experiences(ints, limit=12)]}
+    ctx = None
+    if st.active_tour_id:
+        t = await db.get(Tour, st.active_tour_id)
+        ctx = ctx_for(t, st)
+        ctx["interests"] = ints or ctx["interests"]
+    ctx = ctx or P.make_ctx({"interests": ints}, st.demo_date, 1, [])
+    out = []
+    for o in P.recommend_experiences(ints, limit=12, ctx=ctx):
+        ev = P.evaluate(o, ctx)
+        out.append(ser_offering(o, brief=True) | {"reason": P.fit_reason(o, ctx), "fit": ev["fit_eligible"],
+                                                  "vetoed": [f"{v['name']} ({v['age']})" for v in ev["vetoed"]]})
+    return {"interests": ints, "destinations": P.recommend_destinations(ints), "experiences": out,
+            "group": [{"name": m["name"], "age": m["age"]} for m in ctx["members"]]}
 
 
 @app.get("/destinations/{key}")
@@ -271,19 +310,27 @@ async def plan_tour(body: PlanIn, db: AsyncSession = Depends(get_db)):
     if body.customer_id:
         cust = await db.get(Customer, body.customer_id)
     else:
-        cust = Customer(name=body.name or "Guest traveler", segment="family" if body.children else "couple" if body.adults == 2 else "solo" if body.adults == 1 else "friends",
+        n_kids = sum(1 for m in body.members if int(m.get("age") or 35) < 12) if body.members else body.children
+        n_all = len(body.members) or (body.adults + body.children)
+        cust = Customer(name=body.name or "Guest traveler", segment="family" if n_kids else "couple" if n_all == 2 else "solo" if n_all == 1 else "friends",
                         interests=body.interests)
         db.add(cust)
         await db.flush()
     prefs = body.model_dump(exclude={"customer_id", "name", "title", "start_date"})
+    if body.mood_text and not body.mood:
+        prefs["mood"] = [m["mood"] for m in ML.parse_mood(body.mood_text)]
+    members = P.default_members(prefs)
+    prefs["members"] = members
+    prefs["adults"] = sum(1 for m in members if m["age"] >= 12)
+    prefs["children"] = len(members) - prefs["adults"]
     start = body.start_date or (st.demo_date + timedelta(days=21))
     res = P.plan(prefs, start, st.rain)
     count = (await db.execute(select(func.count(Tour.id)))).scalar() or 0
     names = [P.W["dests"][s["dest"]]["name"] for s in res["route"]]
     tour = Tour(code=f"TC-{2601 + count}", title=body.title or f"{' · '.join(names)} — {res['ctx']['days']} days", customer_id=cust.id,
                 start_date=start, days=res["ctx"]["days"], prefs={**prefs, "days": res["ctx"]["days"]}, route=res["route"],
-                group={"name": cust.name, "adults": body.adults, "children": body.children,
-                       "members": [cust.name.split(" ")[0]] + [f"Guest {k + 2}" for k in range(body.adults + body.children - 1)]},
+                group={"name": cust.name, "adults": prefs["adults"], "children": prefs["children"],
+                       "members": [f"{m['name']} ({m['age']})" for m in members]},
                 notes=res["warnings"] + res["notes"], checklist={})
     db.add(tour)
     await db.flush()
@@ -361,7 +408,8 @@ async def alternatives(tour_id: int, item_id: int, db: AsyncSession = Depends(ge
                               "start_label": P.label(a["start_min"]) if "start_min" in a else None,
                               "end_label": P.label(a["end_min"]) if "end_min" in a else None,
                               "mode": a.get("quote", {}).get("mode"), "arrive_label": P.label(a["quote"]["arrive"]) if a.get("quote") else None,
-                              "duration_min": a["quote"]["duration"] if a.get("quote") else None, "clashes": a.get("clashes", [])}
+                              "duration_min": a["quote"]["duration"] if a.get("quote") else None, "clashes": a.get("clashes", []),
+                              "fit": a.get("fit"), "members": a.get("member_fits"), "crowd": a.get("crowd")}
                              for a in alts]}
 
 
@@ -440,12 +488,98 @@ async def review(tour_id: int, body: ReviewIn, db: AsyncSession = Depends(get_db
         if row and row.tour_id == tour_id and row.offering_id and r.get("rating"):
             row.rating = int(r["rating"])
             db.add(Review(offering_id=row.offering_id, tour_id=tour_id, author=cust.name.split(" ")[0], rating=int(r["rating"]), text=r.get("text", "")))
+            ctx = ctx_for(tour, await get_state(db))
+            log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, float(r["rating"]), "review",
+                         P.item_members({"meta": row.meta or {}}, ctx))
     tour.review = {"overall": body.overall, "text": body.text, "at": datetime.utcnow().isoformat()}
     tour.status = "reviewed"
     await db.commit()
     await P.load_world(db)
     await tour_changed(tour_id, reason="reviewed")
     return {"ok": True}
+
+
+@app.post("/tours/{tour_id}/items/{item_id}/retime")
+async def retime_item(tour_id: int, item_id: int, body: RetimeIn, db: AsyncSession = Depends(get_db)):
+    return await _custom(db, tour_id, lambda t: customize.retime(db, t, item_id, body.start_min))
+
+
+@app.post("/tours/{tour_id}/mood")
+async def mood_checkin(tour_id: int, body: MoodIn, db: AsyncSession = Depends(get_db)):
+    """Daily mood check-in: read free text with the mood model, then re-score the day for the whole group."""
+    tour = await tour_or_404(db, tour_id)
+    parsed = ML.parse_mood(body.text) if body.text else []
+    moods = list(dict.fromkeys(body.moods + [m["mood"] for m in parsed]))
+    events, note = await run_trigger(db, {"trigger_type": "mood_change", "tour_id": tour.id, "moods": moods, "text": body.text,
+                                          "source": "traveler"}, tour.id)
+    await db.commit()
+    await after_events(db, events)
+    await tour_changed(tour_id, reason="mood")
+    return {"moods": moods, "parsed": parsed, "events": [await ser_event(db, e) for e in events], "note": note}
+
+
+@app.get("/offerings/{oid}/insights")
+async def offering_insights(oid: int, tour_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    """How an experience suits the active group: per-person fit with reasons, crowd forecast by hour, tags."""
+    st = await get_state(db)
+    o = P.off(oid)
+    if not o or o["kind"] != "activity":
+        raise HTTPException(404, "Unknown experience")
+    tour = await db.get(Tour, tour_id or st.active_tour_id) if (tour_id or st.active_tour_id) else None
+    ctx = ctx_for(tour, st) if tour else P.make_ctx({}, st.demo_date, 1, [])
+    day = next((d for d in range(1, ctx["days"] + 1) if P.dest_for_day(ctx, d) == o["dest_key"]), None) if tour else None
+    ev = P.evaluate(o, ctx, day, None, reasons=True)
+    on = P.day_date(ctx, day) if day else st.demo_date
+    from .insights import tags_for
+    return {"fit": ev["fit_eligible"], "vetoed": ev["vetoed"], "best_start": P.label(ev["start"]), "best_hour": ev["start"] // 60, "members": ev["members"],
+            "crowd_curve": ML.crowd_curve(o["place"], on), "date": on.isoformat(), "day": day,
+            "tags": tags_for(o, ctx, day, ev["start"], ev["fit_eligible"], ev["members"], crowd=ev["crowd"]),
+            "profile": {k: o.get(k) for k in ("category", "intensity", "stairs", "walk_km", "seating", "shade", "min_age", "popularity", "best_time", "source")}}
+
+
+# ---------------------------------------------------------------- ML models
+@app.get("/ml/metrics")
+async def ml_metrics(db: AsyncSession = Depends(get_db)):
+    meta = ML.models()["meta"]
+    fb = (await db.execute(select(func.count(Feedback.id)))).scalar() or 0
+    by_signal = dict((await db.execute(select(Feedback.signal, func.count(Feedback.id)).group_by(Feedback.signal))).all())
+    return meta | {"feedback_available": fb, "feedback_by_signal": by_signal}
+
+
+@app.post("/ml/retrain")
+async def ml_retrain(db: AsyncSession = Depends(get_db)):
+    """Retrain all three models: synthetic data from the expert priors + every real feedback signal collected so far."""
+    import asyncio
+
+    from .ml.train import train
+    rows = (await db.execute(select(Feedback))).scalars().all()
+    feedback = [(r.features, r.rating) for r in rows if r.features]
+    meta = await asyncio.get_running_loop().run_in_executor(None, lambda: train(feedback, verbose=False))
+    ML.reload()
+    await hub.broadcast({"type": "model_retrained", "version": meta["version"]})
+    return meta
+
+
+@app.post("/ml/predict")
+async def ml_predict(body: PredictIn):
+    """Playground: one person, one experience, one situation -> predicted enjoyment, reasons and crowd."""
+    from datetime import date as _date
+    o = P.off(body.offering_id)
+    if not o or o["kind"] != "activity":
+        raise HTTPException(404, "Unknown experience")
+    on = _date(2026, body.month, 1)
+    on = on + timedelta(days=(body.weekday - on.weekday()) % 7)
+    start = P.hm(body.start)
+    crowd = ML.crowd(o["place"], on, start / 60 + o["duration_min"] / 120, body.rain)
+    member = {"name": "Traveler", "age": body.age, "interests": body.interests, "step_free": body.step_free}
+    ctx = {"start_min": start, "month": body.month, "rain": body.rain, "moods": body.moods, "crowd": crowd}
+    res = ML.member_fits([member], o["place"], ctx, with_reasons=True)[0]
+    return res | {"crowd": crowd, "crowd_curve": ML.crowd_curve(o["place"], on, body.rain)}
+
+
+@app.post("/ml/mood")
+async def ml_mood(body: MoodIn):
+    return {"moods": ML.parse_mood(body.text)}
 
 
 # ---------------------------------------------------------------- adapt
@@ -642,7 +776,7 @@ async def dashboard(db: AsyncSession = Depends(get_db)):
     for t in tours:
         if t.status != "booked":
             continue
-        full = await serialize_tour(db, t, st)
+        full = await serialize_tour(db, t, st, insights=False)
         for r in full["risks"]:
             alerts.append({**r, "tour_id": t.id, "tour_code": t.code, "customer": full["customer"]["name"]})
     reviews = [t.review["overall"] for t in tours if t.review]

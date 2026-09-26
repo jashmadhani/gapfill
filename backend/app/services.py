@@ -5,7 +5,9 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import insights as I
 from . import planner as P
+from .ml import infer as ML
 from .models import AppState, ChangeEvent, Coordinator, Customer, Payment, Task, Tour, TourItem
 
 DEPOSIT = 0.30
@@ -135,7 +137,9 @@ async def new_row(db, tour: Tour, d: dict, booked: bool) -> TourItem:
                    meta=d.get("meta") or {}, status="booked" if booked else "planned")
     db.add(row)
     await db.flush()
-    if booked:
+    if booked and row.kind == "rest":
+        row.status = "booked"
+    elif booked:
         row.booking_ref = booking_ref(tour, row)
         row.vendor_status = "pending"
         await add_task(db, "confirm", f"Confirm {row.booking_ref}: {row.title} · day {row.day} {P.label(row.start_min)} · {row.qty} pax",
@@ -252,7 +256,7 @@ def ser_item(tour: Tour, i: dict, st: AppState) -> dict:
     return d
 
 
-async def serialize_tour(db: AsyncSession, tour: Tour, st: AppState, full=True) -> dict:
+async def serialize_tour(db: AsyncSession, tour: Tour, st: AppState, full=True, insights=True) -> dict:
     rows = await load_items(db, tour.id)
     items = [item_dict(r) for r in rows]
     ctx = ctx_for(tour, st)
@@ -275,10 +279,14 @@ async def serialize_tour(db: AsyncSession, tour: Tour, st: AppState, full=True) 
                           "confirmed": sum(1 for i in items if P.live(i) and i.get("vendor_status") == "confirmed"),
                           "declined": sum(1 for i in items if P.live(i) and i.get("vendor_status") == "declined")},
         "review": tour.review, "created_at": tour.created_at.isoformat(),
+        "members": [{"name": m["name"], "age": m["age"], "band": ML.BAND_LABEL[ML.band_of(m["age"])], "step_free": m["step_free"],
+                     "rest": m.get("rest", False), "interests": m.get("interests", [])} for m in ctx["members"]],
+        "moods": ctx.get("moods", []),
     }
     if not full:
         base["risk_count"] = len(risks(tour, items, ctx, st)) if tour.status == "booked" else 0
         return base
+    ins = I.compute(tour, items, ctx, st, pricing["total"], current_day(tour, st) if tour.status == "booked" else None) if insights else None
     days = []
     for d in range(1, tour.days + 1):
         dest = P.dest_for_day(ctx, d)
@@ -286,13 +294,14 @@ async def serialize_tour(db: AsyncSession, tour: Tour, st: AppState, full=True) 
         days.append({"day": d, "date": (tour.start_date + timedelta(days=d - 1)).isoformat(), "dest": dest,
                      "dest_name": P.W["dests"].get(dest, {}).get("name"), "rain": P.rain_on(ctx, dest, d),
                      "stay": {"id": stay["id"], "title": stay["title"], "night": d - stay["day"] + 1, "nights": stay["nights"]} if stay else None,
-                     "items": [ser_item(tour, i, st) for i in sorted([i for i in items if i["day"] == d], key=lambda i: (i["start_min"], i["id"]))]})
+                     "items": [ser_item(tour, i, st) | ({"insight": ins["items"].get(i["id"])} if ins else {}) for i in sorted([i for i in items if i["day"] == d], key=lambda i: (i["start_min"], i["id"]))]})
     tasks = (await db.execute(select(Task).where(Task.tour_id == tour.id).order_by(Task.created_at.desc()))).scalars().all()
     events = (await db.execute(select(ChangeEvent).where(ChangeEvent.tour_id == tour.id).order_by(ChangeEvent.created_at.desc()))).scalars().all()
     base |= {
         "days_detail": days, "notes": tour.notes or [], "conflicts": P.conflicts(items, ctx) if tour.status == "draft" else [],
         "risks": risks(tour, items, ctx, st) if tour.status == "booked" else [],
         "checklist": checklist(tour, pay), "packing": packing_for(tour),
+        "considered": ins["considered"] if ins else [], "group_fit": ins["group"] if ins else None,
         "tasks": [{"id": t.id, "kind": t.kind, "text": t.text, "status": t.status, "vendor_id": t.vendor_id,
                    "vendor_name": (P.W["vendors"].get(t.vendor_id) or {}).get("name"), "at": t.created_at.isoformat()} for t in tasks],
         "changes": [{"id": e.id, "label": e.label, "reason": e.reason, "status": e.status, "chosen": e.chosen, "source": e.source,
@@ -324,6 +333,8 @@ async def book_tour(db, tour: Tour, pay_mode: str = "deposit", method: str = "up
         if r.status != "planned":
             continue
         r.status = "booked"
+        if r.kind == "rest":
+            continue
         r.booking_ref = booking_ref(tour, r)
         r.vendor_status = "pending"
         refs.append({"item_id": r.id, "ref": r.booking_ref, "title": r.title, "kind": r.kind, "day": r.day,

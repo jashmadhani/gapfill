@@ -17,7 +17,7 @@ from .models import Coordinator
 from .services import add_task, ctx_for, current_day, get_state, is_past, item_dict, load_items, payments_summary
 
 LLM_MODEL = os.environ.get("TOURCRAFT_LLM_MODEL", "claude-sonnet-5")
-INTENTS = ["help", "schedule", "cost", "late", "rain", "weather", "add", "remove", "hotel_down", "hotel_up", "lighter", "coordinator"]
+INTENTS = ["help", "mood", "schedule", "cost", "late", "rain", "weather", "add", "remove", "hotel_down", "hotel_up", "lighter", "coordinator"]
 
 KEYWORDS = {
     "food": ["food", "foodie", "eat", "hungry", "cook", "cooking", "dinner", "lunch", "street food", "thali", "snack"],
@@ -75,6 +75,9 @@ def parse_rules(text: str) -> dict:
         kw = m.group(1).strip()
     def has(*ws):
         return any(re.search(r"\b" + re.escape(w) + r"\b", t) for w in ws)
+    if has("tired", "exhausted", "wiped", "knackered", "cranky", "restless", "bored", "energetic", "pumped", "starving", "hungry", "sleepy") \
+            or (has("kids", "children") and has("fun", "bored", "restless", "cranky")):
+        return {"intent": "mood", "day": day}
     if has("late", "delayed", "stuck", "traffic"):
         return {"intent": "late", "minutes": minutes or 45, "day": day}
     if has("raining", "rain", "storm", "pouring") and not has("forecast", "will it"):
@@ -87,7 +90,7 @@ def parse_rules(text: str) -> dict:
         return {"intent": "hotel_down", "day": day, "keyword": kw}
     if has("upgrade", "nicer", "better", "luxury") and has("hotel", "stay", "room"):
         return {"intent": "hotel_up", "day": day, "keyword": kw}
-    if has("lighter", "relaxed", "tired", "slower", "less packed", "rest"):
+    if has("lighter", "slower", "less packed", "rest day"):
         return {"intent": "lighter", "day": day}
     if has("skip", "remove", "cancel", "drop"):
         return {"intent": "remove", "keyword": kw, "day": day}
@@ -149,6 +152,15 @@ async def handle(db, tour, text: str) -> tuple[str, dict]:
         if data["events"]:
             return "I've worked out what's affected and prepared options — compare them on the card below and pick one.", data
         return note or "Nothing in your plan is affected.", data
+    if intent == "mood":
+        from .ml import infer as ML
+        moods = [m["mood"] for m in ML.parse_mood(text)]
+        evs, note = await run_trigger(db, {"trigger_type": "mood_change", "tour_id": tour.id, "moods": moods, "text": text, "source": "traveler"}, tour.id)
+        data["events"] = [e.id for e in evs if e.tour_id == tour.id]
+        data["moods"] = moods
+        if data["events"]:
+            return f"Got it — reading that as {', '.join(moods) or 'neutral'}. I re-scored the rest of the day for everyone; compare the options on the card.", data
+        return note or "Noted.", data
     if intent == "weather":
         rainy = [f"day {d}" for d in range(1, tour.days + 1) if P.rain_on(ctx, P.dest_for_day(ctx, d), d)]
         return ("Rain is forecast on " + ", ".join(rainy) + ". I'll flag outdoor plans." if rainy else "Clear skies forecast for your whole tour ☀️"), data

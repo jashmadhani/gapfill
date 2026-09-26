@@ -10,14 +10,15 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 
 from . import planner as P
+from .ml.priors import MOOD_LABEL as ML_MOOD_LABEL
 from .models import ChangeEvent, ChatMessage, Offering, Tour, TourItem, Vendor
 from .services import (add_task, cancel_fee, ctx_for, current_day, get_state, is_past, item_dict, item_start_dt, load_items,
                        new_row, retime_row, retire_row)
 
-LABELS = {"weather": "Weather alert", "unavailable": "No longer available", "vendor_declined": "Vendor declined",
+LABELS = {"mood_change": "Mood check-in", "weather": "Weather alert", "unavailable": "No longer available", "vendor_declined": "Vendor declined",
           "transport_delay": "Transport delay", "transport_cancel": "Transport cancelled", "hotel_issue": "Hotel overbooked",
           "running_late": "Running late", "budget_change": "Budget change"}
-CAUSE = {"weather": "weather", "unavailable": "vendor", "vendor_declined": "vendor", "transport_delay": "transport",
+CAUSE = {"mood_change": "traveler", "weather": "weather", "unavailable": "vendor", "vendor_declined": "vendor", "transport_delay": "transport",
          "transport_cancel": "transport", "hotel_issue": "vendor", "running_late": "traveler", "budget_change": "traveler"}
 
 
@@ -43,18 +44,22 @@ def simulate(items, changes, tour, st, cause):
 
 
 def pref_score(sim, ctx, days) -> int:
-    acts = [i for i in sim if P.live(i) and i["kind"] == "activity" and i["day"] in days]
+    """How well the resulting plan suits the whole group on the affected days: mean ML group fit of its activities."""
+    acts = [i for i in sim if P.live(i) and i["kind"] == "activity" and i["day"] in days and P.off(i["offering_id"])]
     if not acts:
         return 35
-    tot = 0
-    for a in acts:
-        o = P.off(a["offering_id"])
-        if not o:
-            continue
-        m = min(2, len(P.interest_match(o, ctx["interests"])))
-        rain_pen = 25 if o["indoor_outdoor"] == "outdoor" and P.rain_on(ctx, o["dest_key"], a["day"]) else 0
-        tot += 45 * m / 2 + 55 * max(0, (o["rating"] - 3.8)) / 1.2 - rain_pen
-    return max(0, min(100, round(tot / len(acts) + min(10, len(acts) * 2))))
+    fits = [P.evaluate(P.off(a["offering_id"]), ctx, a["day"], a["start_min"], P.item_members(a, ctx))["fit_eligible"] for a in acts]
+    return int(round(sum(fits) / len(fits)))
+
+
+def movable(i) -> bool:
+    return i["kind"] == "activity" and not (i.get("meta") or {}).get("split")
+
+
+def fixed_blocks(items, day, exclude=()) -> list:
+    """Rest breaks and split-track pairs stay where they are when a day is re-sequenced."""
+    return [(i["start_min"], i["end_min"]) for i in items if P.live(i) and i["day"] == day and i["id"] not in exclude
+            and (i["kind"] == "rest" or (i["kind"] == "activity" and (i.get("meta") or {}).get("split")))]
 
 
 def finish_option(key, label, summary, changes, items, tour, st, ctx, cause, days, lost_min=0, details=None, extra=None):
@@ -100,9 +105,17 @@ def upcoming(tour, items, st):
 
 
 # ---------------------------------------------------------------- option builders
+def keep_group(i, ctx):
+    meta = i.get("meta") or {}
+    if not meta.get("split"):
+        return None, None
+    return P.item_members(i, ctx), {k: meta[k] for k in ("split", "track", "partner", "meet") if k in meta}
+
+
 def replace_change(i, alt, ctx):
     o = alt["offering"]
-    return {"op": "replace", "item_id": i["id"], "new": P.activity_item(o, i["day"], alt["start_min"], ctx),
+    who, meta = keep_group(i, ctx)
+    return {"op": "replace", "item_id": i["id"], "new": P.activity_item(o, i["day"], alt["start_min"], ctx, who, meta),
             "text": f"{i['title']} → {o['title']} ({P.label(alt['start_min'])})"}
 
 
@@ -112,8 +125,8 @@ def resequence(work, i, ctx, tour, st, indoor, taken, rank=0):
     now = P.hm(st.demo_time) if tour and current_day(tour, st) == day else 0
     start, end = P.day_window(ctx, day, work)
     start = max(start, now + 20)
-    others = [x for x in work if P.live(x) and x["kind"] == "activity" and x["day"] == day and x["id"] != i["id"] and x["start_min"] >= now]
-    fixed = [(x["start_min"], x["end_min"]) for x in work if P.live(x) and x["day"] == day and x["kind"] in ("activity", "transport")
+    others = [x for x in work if P.live(x) and movable(x) and x["day"] == day and x["id"] != i["id"] and x["start_min"] >= now]
+    fixed = [(x["start_min"], x["end_min"]) for x in work if P.live(x) and x["day"] == day and x["kind"] in ("activity", "transport", "rest")
              and x["id"] != i["id"] and x not in others]
     used = {x["offering_id"] for x in work if P.live(x) and x["kind"] == "activity"}
     cands = [o for o in P.acts_in(i["dest_key"]) if o["id"] not in used and o["id"] not in taken and not P.act_allowed(o, ctx, day)
@@ -131,7 +144,8 @@ def resequence(work, i, ctx, tour, st, indoor, taken, rank=0):
         changes, details = [], []
         for o, s_, e_ in packed:
             if o["id"] == c["id"]:
-                changes.append({"op": "replace", "item_id": i["id"], "new": P.activity_item(c, day, s_, ctx),
+                who, meta = keep_group(i, ctx)
+                changes.append({"op": "replace", "item_id": i["id"], "new": P.activity_item(c, day, s_, ctx, who, meta),
                                 "text": f"{i['title']} → {c['title']} ({P.label(s_)})"})
                 details.append(changes[-1]["text"])
             elif s_ != by_off[o["id"]]["start_min"]:
@@ -143,26 +157,26 @@ def resequence(work, i, ctx, tour, st, indoor, taken, rank=0):
 
 
 def activity_swap(items, affected, ctx, rank=0, indoor=False, tour=None, st=None):
-    changes, details, lost, taken = [], [], 0, set()
+    """Replace each affected activity (same slot if possible, otherwise re-sequence its day). Every item changes at most
+    once, and the experiences being replaced can't come back as someone else's replacement."""
+    pairs, lost, taken = [], 0, {i["offering_id"] for i in affected}
     work = copy.deepcopy(items)
     for i in affected:
-        alts = [a for a in P.activity_alternatives(work, next(w for w in work if w["id"] == i["id"]), ctx, limit=6, indoor_only=indoor)
-                if a["offering"]["id"] not in taken]
+        cur = next(w for w in work if w["id"] == i["id"])
+        if not P.live(cur):
+            continue
+        alts = [a for a in P.activity_alternatives(work, cur, ctx, limit=6, indoor_only=indoor, exclude=taken)]
         if len(alts) > rank:
             a = alts[rank]
-            c = replace_change(i, a, ctx)
+            c = replace_change(cur, a, ctx)
             taken.add(a["offering"]["id"])
-            changes.append(c)
-            details.append(c["text"])
-            for w in work:
-                if w["id"] == i["id"]:
-                    w["status"] = "replaced"
+            pairs.append((c, c["text"]))
+            cur["status"] = "replaced"
             work.append({**c["new"], "id": -len(work), "status": "planned"})
-        elif st is not None and (r := resequence(work, i, ctx, tour, st, indoor, taken, rank)):
+        elif st is not None and (r := resequence(work, cur, ctx, tour, st, indoor, taken, rank)):
             c, cs, ds = r
             taken.add(c["id"])
-            changes += cs
-            details += ds
+            pairs += list(zip(cs, ds))
             for ch in cs:
                 w = next(w for w in work if w["id"] == ch["item_id"])
                 if ch["op"] == "replace":
@@ -171,10 +185,12 @@ def activity_swap(items, affected, ctx, rank=0, indoor=False, tour=None, st=None
                 else:
                     w.update(start_min=ch["start_min"], end_min=ch["end_min"])
         else:
-            changes.append({"op": "remove", "item_id": i["id"]})
-            details.append(f"Drop {i['title']} — nothing suitable fits that day")
+            pairs.append(({"op": "remove", "item_id": i["id"]}, f"Drop {i['title']} — nothing suitable fits that day"))
+            cur["status"] = "cancelled"
             lost += i["end_min"] - i["start_min"]
-    return changes, details, lost
+    gone = {c["item_id"] for c, _ in pairs if c["op"] in ("replace", "remove")}
+    pairs = [(c, d) for c, d in pairs if not (c["op"] == "retime" and c["item_id"] in gone)]
+    return [c for c, _ in pairs], [d for _, d in pairs], lost
 
 
 def move_to_other_day(items, affected, ctx, tour, st, avoid_rain=True):
@@ -209,8 +225,9 @@ def repack_after(items, day_acts, start, ctx, end_extra=60):
     _, end = P.day_window(ctx, day_acts[0]["day"], [i for i in items if i["kind"] != "transport"]) if day_acts else (0, 0)
     end = end + end_extra
     keep, best = [], []
+    fixed = fixed_blocks(items, day_acts[0]["day"]) if day_acts else []
     for i in sorted(day_acts, key=lambda i: -P.act_score(P.off(i["offering_id"]), ctx)):
-        trial = P.pack([P.off(x["offering_id"]) for x in keep + [i]], start, end)
+        trial = P.pack([P.off(x["offering_id"]) for x in keep + [i]], start, end, fixed=fixed)
         if trial:
             keep.append(i)
             best = trial
@@ -268,7 +285,7 @@ def analyse_transport(kind, tour, items, t, ctx, st, minutes):
     cause = "transport"
     cancelled = kind == "transport_cancel"
     new_arr = t["end_min"] + (minutes or 0)
-    day_acts = sorted([i for i in items if P.live(i) and i["kind"] == "activity" and i["day"] == t["day"] and i["start_min"] >= t["start_min"]],
+    day_acts = sorted([i for i in items if P.live(i) and movable(i) and i["day"] == t["day"] and i["start_min"] >= t["start_min"]],
                       key=lambda i: i["start_min"])
     hotel = next((i for i in items if P.live(i) and i["kind"] == "hotel" and i["day"] == t["day"]), None)
     hit = [i for i in day_acts if i["start_min"] < new_arr + 45] if not cancelled else day_acts
@@ -346,7 +363,7 @@ def analyse_late(tour, items, ctx, st, minutes):
     now = P.hm(st.demo_time)
     if not d:
         return None, []
-    acts = sorted([i for i in items if P.live(i) and i["kind"] == "activity" and i["day"] == d and i["start_min"] >= now], key=lambda i: i["start_min"])
+    acts = sorted([i for i in items if P.live(i) and movable(i) and i["day"] == d and i["start_min"] >= now], key=lambda i: i["start_min"])
     hit = [i for i in acts if i["start_min"] < now + minutes + 15]
     if not hit:
         return None, []
@@ -362,6 +379,64 @@ def analyse_late(tour, items, ctx, st, minutes):
     c, det, lost = move_to_other_day(items, hit, ctx, tour, st, avoid_rain=False)
     opts.append(finish_option("C", "Do it another day", "Move what you'd miss to a later day in this city.", c, items, tour, st, ctx, "traveler",
                               set(range(1, ctx["days"] + 1)), lost, det))
+    return {"direct": direct, "downstream": downstream}, opts
+
+
+def analyse_mood(tour, items, ctx, st, moods):
+    """Re-score the rest of today (or tomorrow, late in the day) under the new mood with the ML model and offer changes."""
+    d = current_day(tour, st) or 1
+    now = P.hm(st.demo_time) if current_day(tour, st) else 0
+    new = {**ctx, "moods": moods, "_fit": {}, "_weights": {}}
+    left_today = [i for i in items if P.live(i) and movable(i) and i["day"] == d and i["start_min"] >= now]
+    days = [d] if now < 17 * 60 and left_today else [min(ctx["days"], d + 1)]  # nothing left today -> adapt tomorrow
+    acts = [i for i in items if P.live(i) and movable(i) and i["day"] in days and (i["day"] > d or i["start_min"] >= now)]
+    if not acts:
+        return None, []
+    rows = []
+    for i in acts:
+        o = P.off(i["offering_id"])
+        before = P.evaluate(o, ctx, i["day"], i["start_min"])["fit_eligible"]
+        after = P.evaluate(o, new, i["day"], i["start_min"])["fit_eligible"]
+        rows.append((i, before, after))
+    worse = [(i, b, a) for i, b, a in rows if a < 62 or a <= b - 6]
+    names = ", ".join(ML_MOOD_LABEL.get(m, m).lower() for m in moods) or "neutral"
+    direct = [{"item_id": i["id"], "title": i["title"], "when": f"Day {i['day']} · {P.label(i['start_min'])}",
+               "why": f"Fit {b}% → {a}% for a {names} group"} for i, b, a in worse]
+    downstream = [{"item_id": i["id"], "title": i["title"], "when": P.label(i["start_min"]), "why": f"Still a good fit ({a}%)"} for i, b, a in rows if (i, b, a) not in worse]
+    opts = []
+    target = [i for i, _, _ in worse]
+    if target:
+        c, det, lost = activity_swap(items, target, new, 0, indoor="hot" in moods, tour=tour, st=st)
+        if any(x["op"] == "replace" for x in c):
+            opts.append(finish_option("A", "Tune the day to the mood", "Swap what no longer suits how everyone feels for the best-fitting alternatives.",
+                                      c + [{"op": "prefs", "fields": {"mood": moods}}], items, tour, st, new, "traveler", set(days), lost, det))
+    if set(moods) & {"tired", "relaxed", "hot", "restless_kids"}:
+        hardest = max(acts, key=lambda i: (P.off(i["offering_id"]).get("intensity", 2), -[a for x, _, a in rows if x is i][0]))
+        c = [{"op": "remove", "item_id": hardest["id"]}]
+        det = [f"Skip {hardest['title']} (the most demanding thing left)"]
+        day = hardest["day"]
+        if not any(i["kind"] == "rest" and P.live(i) and i["day"] == day for i in items):
+            rest = P.rest_item(day, hardest["dest_key"], "Mood check-in: time to recharge")
+            if not any(13 * 60 + 30 < i["end_min"] and 15 * 60 > i["start_min"] for i in items if P.live(i) and i["day"] == day and i["id"] != hardest["id"]
+                       and i["kind"] in ("activity", "transport")):
+                c.append({"op": "add", "new": rest})
+                det.append("Add a rest break 1:30–3:00 PM")
+        opts.append(finish_option("B", "Make it a lighter day", "Drop the most tiring stop and build in a proper break.",
+                                  c + [{"op": "prefs", "fields": {"mood": moods}}], items, tour, st, new, "traveler", set(days),
+                                  hardest["end_min"] - hardest["start_min"], det))
+    if set(moods) & {"energetic", "adventurous", "foodie", "cultural"}:
+        dest = P.dest_for_day(new, days[0])
+        used = {i["offering_id"] for i in items if P.live(i) and i["kind"] == "activity"}
+        cands = sorted([o for o in P.acts_in(dest) if o["id"] not in used and not P.act_allowed(o, new, days[0])],
+                       key=lambda o: -P.act_score(o, new, days[0]))
+        for o in cands[:6]:
+            slot = P.free_slot(items, days[0], o, new)
+            if slot and (days[0] > d or slot[0] >= now + 30):
+                it = P.activity_item(o, days[0], slot[0], new)
+                opts.append(finish_option("C", f"Add {o['title']}", "Use the extra energy: the best mood-matched experience that fits a free slot.",
+                                          [{"op": "add", "new": it}, {"op": "prefs", "fields": {"mood": moods}}], items, tour, st, new, "traveler",
+                                          set(days), 0, [f"Add {o['title']} at {P.label(slot[0])}"]))
+                break
     return {"direct": direct, "downstream": downstream}, opts
 
 
@@ -555,6 +630,14 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
         if not impact:
             return [], "Nothing in the next stretch is affected — no changes needed."
         reason = f"You're running about {minutes} min late. {len(impact['direct'])} upcoming plan{'s' if len(impact['direct']) > 1 else ''} would be affected."
+    elif kind == "mood_change":
+        moods = [m for m in (body.get("moods") or []) if m in ML_MOOD_LABEL]
+        tour.prefs = {**tour.prefs, "mood": moods, "mood_text": body.get("text") or ""}
+        impact, opts = analyse_mood(tour, items, ctx, st, moods)
+        label = ", ".join(ML_MOOD_LABEL[m].lower() for m in moods) or "neutral"
+        if not impact or not opts:
+            return [], f"Noted — everyone's feeling {label}. Today's plan already suits that."
+        reason = f"Everyone's feeling {label}. {len(impact['direct']) or 'None'} of the upcoming plans fit less well now — here's how to adapt."
     elif kind == "budget_change":
         nb = float(body.get("new_budget") or 0)
         impact, opts = analyse_budget(tour, items, ctx, st, nb)
@@ -593,6 +676,10 @@ async def resolve_event(db, ev: ChangeEvent, action: str, option_key: str | None
                 out["fees"] += await retire_row(db, tour, r, st, cause, "cancelled", ev.label)
             elif c["op"] == "retime" and r:
                 await retime_row(db, tour, r, c["day"], c["start_min"], c["end_min"], ev.label)
+            elif c["op"] == "add":
+                nr = await new_row(db, tour, c["new"], booked)
+                if nr.booking_ref:
+                    out["booked"].append({"title": nr.title, "ref": nr.booking_ref})
             elif c["op"] == "notify" and r:
                 await add_task(db, "notify", f"{r.booking_ref or ''} {r.title}: {c['text']}", tour.id, r.vendor_id, tour.coordinator_id)
             elif c["op"] == "prefs":

@@ -111,6 +111,52 @@ def main():
         acts = [i for dd in full["days_detail"] for i in dd["items"] if i["kind"] == "activity" and i["status"] == "booked"]
         ok(c.post(f"/tours/{done['id']}/review", json={"overall": 5, "text": "Great", "items": [{"item_id": a["id"], "rating": 5} for a in acts]}))
 
+        # Group-aware ML planning: three generations, safety vetoes, fairness, considered list, tags
+        g = ok(c.post("/tours/plan", json={"name": "Test family", "days": 6, "destinations": ["jaipur", "udaipur"], "budget": 250000,
+                                            "members": [{"name": "Kid", "age": 5}, {"name": "Teen", "age": 20, "interests": ["adventure"]},
+                                                        {"name": "Parent", "age": 45}, {"name": "Grandma", "age": 68, "step_free": True, "rest": True}],
+                                            "interests": ["heritage", "food"], "mood_text": "we're a bit tired"}))
+        assert g["moods"] == ["tired"], g["moods"]
+        assert len(g["members"]) == 4 and g["group_fit"]["members"]
+        acts = [i for d in g["days_detail"] for i in d["items"] if i["kind"] == "activity"]
+        assert any(i["kind"] == "rest" for d in g["days_detail"] for i in d["items"]), "rest block expected"
+        for i in acts:
+            ins = i["insight"]
+            assert ins and 0 <= ins["fit"] <= 100
+            who = i["meta"].get("members")
+            vetoed = [m for m in ins["members"] if m["veto"]]
+            assert not vetoed, (i["title"], vetoed)  # nobody is ever booked into something unsafe for them
+            if not who:
+                assert len(ins["members"]) == 4
+        assert g["considered"] and any(c_["candidates"] for c_ in g["considered"])
+        cand = next(x for c_ in g["considered"] for x in c_["candidates"])
+        assert cand["reason"] and cand["reason_code"]
+        print("group plan:", [(i["title"], i["insight"]["fit"], [t["label"] for t in i["insight"]["tags"]]) for i in acts][:6])
+        print("considered:", [(x["offering"]["title"], x["reason_code"]) for c_ in g["considered"] for x in c_["candidates"]][:6])
+        room = next((x for c_ in g["considered"] for x in c_["candidates"] if x["add_day"]), None)
+        if room:
+            ok(c.post(f"/tours/{g['id']}/items", json={"offering_id": room["offering"]["id"], "day": room["add_day"]}))
+        first = acts[0]
+        ok(c.get(f"/offerings/{first['offering_id']}/insights?tour_id={g['id']}"))
+        r = c.post(f"/tours/{g['id']}/items/{first['id']}/retime", json={"start_min": first["start_min"] + 15})
+        assert r.status_code in (200, 400), r.text
+
+        # Mood check-in on the in-progress tour
+        ok(c.post(f"/tours/{tid}/activate"))
+        m = ok(c.post(f"/tours/{tid}/mood", json={"text": "We're exhausted and it's too hot"}))
+        print("mood:", m["moods"], m["note"], [o["label"] for e in m["events"] for o in e["options"]])
+        assert "tired" in m["moods"]
+        for e in m["events"]:
+            ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"]}))
+
+        # ML endpoints
+        met = ok(c.get("/ml/metrics"))
+        assert met["satisfaction"]["mae"] < met["satisfaction"]["baseline_mean_mae"]
+        assert met["feedback_available"] > 0, "swaps/adds/removals/reviews should have produced feedback rows"
+        p = ok(c.post("/ml/predict", json={"offering_id": first["offering_id"], "age": 70, "start": "13:00", "month": 5}))
+        assert 0 <= p["fit"] <= 100 and len(p["crowd_curve"]) == 16
+        assert ok(c.post("/ml/mood", json={"text": "the kids are cranky"}))["moods"][0]["mood"] == "restless_kids"
+
         # clock
         ok(c.post("/demo/clock", json={"day": 3, "time": "09:00"}))
         with c.websocket_connect("/ws") as ws:

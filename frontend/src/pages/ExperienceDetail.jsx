@@ -5,6 +5,7 @@ import { api, inr } from '../api'
 import { useTour } from '../store'
 import { Button, Card, GlassIconButton, INTEREST, IOBadge, Photo, Rating, Spinner, cx } from '../components/ui'
 import { destImage } from '../media'
+import { CrowdChart, FitBadge, FitChips, TagList } from '../components/group'
 
 const WEEKDAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -15,8 +16,10 @@ export default function ExperienceDetail() {
   const [exp, setExp] = useState(null)
   const [day, setDay] = useState('')
   const [busy, setBusy] = useState(false)
+  const [fit, setFit] = useState(null)
 
   useEffect(() => { api.offering(id).then(setExp) }, [id])
+  useEffect(() => { setFit(null); api.offeringInsights(id, tour?.id).then(setFit).catch(() => {}) }, [id, tour?.id])
   if (!exp) return <Spinner />
 
   const editable = tour && ['plan', 'prepare', 'operate'].includes(tour.stage)
@@ -64,6 +67,27 @@ export default function ExperienceDetail() {
             <span className={cx('inline-flex items-center gap-1 rounded-md px-2 py-1', exp.kid_friendly ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-50 text-stone-400 line-through')}><Baby size={13} /> Kid friendly</span>
           </div>
         </Card>
+
+        {fit && (
+          <Card className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-base font-bold">How it suits {tour ? 'your group' : 'you'}</h2>
+                <p className="text-xs text-stone-500">Predicted per person by our model{fit.day ? ` for day ${fit.day}` : ''} · best around {fit.best_start}</p>
+              </div>
+              <FitBadge fit={fit.fit} />
+            </div>
+            <FitChips members={fit.members} className="mt-3" />
+            {fit.tags.length > 0 && <div className="mt-3"><TagList tags={fit.tags} /></div>}
+            <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-stone-500">Crowd forecast · {new Date(fit.date + 'T00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</div>
+            <div className="mt-2"><CrowdChart curve={fit.crowd_curve} mark={fit.best_hour} /></div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-2xl bg-sand-50 p-2"><div className="text-stone-500">Effort</div><div className="font-bold">{fit.profile.intensity}/5</div></div>
+              <div className="rounded-2xl bg-sand-50 p-2"><div className="text-stone-500">Stairs</div><div className="font-bold">{fit.profile.stairs >= 0.6 ? 'Many' : fit.profile.stairs >= 0.3 ? 'Some' : 'Few'}</div></div>
+              <div className="rounded-2xl bg-sand-50 p-2"><div className="text-stone-500">Walking</div><div className="font-bold">{fit.profile.walk_km} km</div></div>
+            </div>
+          </Card>
+        )}
 
         {editable && (
           <Card className="p-4 ring-2 ring-emerald-200">

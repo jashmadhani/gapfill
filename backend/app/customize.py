@@ -3,6 +3,7 @@ Drafts are edited in place; booked tours go through rebooking with vendor tasks 
 from sqlalchemy import delete
 
 from . import planner as P
+from .insights import log_feedback
 from .models import Tour, TourItem
 from .services import ctx_for, get_state, item_dict, load_items, new_row, retire_row
 
@@ -24,15 +25,23 @@ async def swap(db, tour: Tour, item_id: int, offering_id: int | None = None, mod
         raise CustomizeError("That item is no longer in the plan.")
     it = item_dict(row)
     if row.kind == "activity":
-        alt = next((a for a in P.activity_alternatives(items, it, ctx, limit=50) if a["offering"]["id"] == offering_id), None)
+        alt = next((a for a in P.activity_alternatives(items, it, ctx, limit=80) if a["offering"]["id"] == offering_id), None)
         o = P.off(offering_id)
+        meta = it["meta"]
+        who = P.item_members(it, ctx) if meta.get("split") else None
+        keep = {k: meta[k] for k in ("split", "track", "partner", "meet") if k in meta} if who else None
         if not alt:
-            slot = P.free_slot([i for i in items if i["id"] != item_id], row.day, o, ctx) if o else None
+            why = P.act_allowed(o, ctx, row.day, members=who) if o else "unknown"
+            if why:
+                raise CustomizeError(f"{o['title'] if o else 'That experience'}: {why}.")
+            slot = P.free_slot([i for i in items if i["id"] != item_id], row.day, o, ctx)
             if not slot:
-                raise CustomizeError(f"{o['title'] if o else 'That experience'} doesn't fit day {row.day}'s window.")
-            new = P.activity_item(o, row.day, slot[0], ctx)
+                raise CustomizeError(f"{o['title']} doesn't fit day {row.day}'s window.")
+            new = P.activity_item(o, row.day, slot[0], ctx, who, keep)
         else:
-            new = P.activity_item(alt["offering"], row.day, alt["start_min"], ctx)
+            new = P.activity_item(alt["offering"], row.day, alt["start_min"], ctx, who, keep)
+        log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.5, "swap_out", P.item_members(it, ctx))
+        log_feedback(db, tour, ctx, new["offering_id"], new["day"], new["start_min"], 4.0, "swap_in", P.item_members(new, ctx))
     elif row.kind == "hotel":
         h = P.off(offering_id)
         if not h or h["kind"] != "hotel":
@@ -80,6 +89,7 @@ async def add(db, tour: Tour, offering_id: int, day: int | None = None) -> dict:
             reasons.append(f"day {d} is full")
             continue
         nr = await new_row(db, tour, P.activity_item(o, d, slot[0], ctx), tour.status == "booked")
+        log_feedback(db, tour, ctx, o["id"], d, slot[0], 4.0, "added")
         return {"item_id": nr.id, "day": d, "start_label": P.label(slot[0]), "title": o["title"], "booking_ref": nr.booking_ref}
     if not day and all("is in" in r for r in reasons):
         raise CustomizeError(f"{o['title']} is in {P.W['dests'][o['dest_key']]['name']}, which isn't on your route.")
@@ -93,6 +103,9 @@ async def remove(db, tour: Tour, item_id: int) -> dict:
         raise CustomizeError("Unknown item.")
     if row.kind in ("hotel", "transport") and tour.status == "draft":
         raise CustomizeError("Stays and transfers hold the route together — swap them instead of removing.")
+    if row.kind == "activity" and row.offering_id:
+        ctx = ctx_for(tour, st)
+        log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.0, "removed", P.item_members(item_dict(row), ctx))
     if tour.status == "booked":
         fee = await retire_row(db, tour, row, st, "traveler", "cancelled", "traveler removed")
         return {"fee": fee}
@@ -127,3 +140,20 @@ async def regenerate(db, tour: Tour) -> dict:
     for i in res["items"]:
         await new_row(db, tour, i, False)
     return res
+
+
+async def retime(db, tour: Tour, item_id: int, start_min: int) -> dict:
+    """Move an activity within its day (e.g. "go at 8 AM when it's quieter")."""
+    from .services import retime_row
+    st, ctx, rows, items = await _ctx_items(db, tour)
+    row = next((r for r in rows if r.id == item_id), None)
+    if not row or row.kind != "activity":
+        raise CustomizeError("Only experiences can be re-timed.")
+    o = P.off(row.offering_id)
+    end = start_min + o["duration_min"]
+    if start_min < P.hm(o["open"]) or end > P.hm(o["close"]):
+        raise CustomizeError(f"{o['title']} is open {o['open']}–{o['close']}.")
+    if any(start_min < be and end > bs for bs, be in P.blocks(items, row.day, exclude=row.id)):
+        raise CustomizeError(f"Something else is planned then on day {row.day}.")
+    await retime_row(db, tour, row, row.day, start_min, end, "quieter time")
+    return {"item_id": row.id, "start_label": P.label(start_min)}

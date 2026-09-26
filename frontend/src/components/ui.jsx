@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  Check, Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
+  Check, Coffee, Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
   Plane, ShoppingBag, Sparkles, Star, Sun, TrainFront, Umbrella, UtensilsCrossed,
 } from 'lucide-react'
 
@@ -121,6 +121,7 @@ export function FitIcons({ o }) {
 
 export function KindIcon({ item, size = 16, className }) {
   if (item.kind === 'hotel') return <BedDouble size={size} className={className} />
+  if (item.kind === 'rest') return <Coffee size={size} className={className} />
   if (item.kind === 'transport') {
     const M = MODE[item.meta?.mode]?.Icon || Car
     return <M size={size} className={className} />

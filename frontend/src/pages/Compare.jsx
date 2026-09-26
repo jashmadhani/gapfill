@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Clock, TriangleAlert } from 'lucide-react'
 import { api, inr, signedInr } from '../api'
 import { useTour } from '../store'
 import { Button, Card, Chip, IOBadge, KindIcon, MODE, Rating, Spinner, TIER_LABEL, cx } from '../components/ui'
+import { FitBadge, FitChips } from '../components/group'
 
 // Compare alternatives for one component (activity / hotel / transfer) and swap in one tap.
 export default function Compare() {
@@ -77,7 +78,10 @@ export default function Compare() {
               {it.kind !== 'transport' && <Rating value={a.offering.rating} count={a.offering.rating_count} className="text-xs" />}
               {it.kind === 'activity' && <IOBadge io={a.offering.indoor_outdoor} />}
               {a.clashes?.length > 0 && <Chip tone="red"><TriangleAlert size={12} /> clashes with {a.clashes.length}</Chip>}
+              {a.fit != null && <FitBadge fit={a.fit} />}
+              {a.crowd != null && <Chip tone={a.crowd >= 68 ? 'red' : a.crowd >= 45 ? 'amber' : 'green'}>{a.crowd}% busy</Chip>}
             </div>
+            {pick === idx && a.members && <div className="mt-2" onClick={(e) => e.stopPropagation()}><FitChips members={a.members} /></div>}
           </button>
         ))}
       </div>

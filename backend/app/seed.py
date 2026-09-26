@@ -5,8 +5,10 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 
 from . import planner as P
-from .catalog import (ACTIVITIES, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, REVIEW_SNIPPETS, TIER_AMENITIES,
-                      TRANSPORT)
+from .catalog import (ACTIVITIES, ATTRS, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, KAGGLE_IMPORT_SKIP, REVIEW_SNIPPETS,
+                      TIER_AMENITIES, TRANSPORT)
+from .ml.data import CITY_DEST, kaggle_lookup, kaggle_rows
+from .ml.priors import CAT_HOURS, CAT_TAGS, DEFAULT_TYPE, TYPE_PRIORS
 from .db import Base, SessionLocal, engine
 from .models import (AppState, ChatMessage, Coordinator, Customer, Destination, Offering, Payment, Review, Task, Tour,
                      TourItem, Vendor)
@@ -14,19 +16,29 @@ from .services import book_tour, load_items, new_row
 
 # (customer idx, title, start offset from today, days, prefs, lifecycle)
 TOURS = [
-    (0, "Royal Rajasthan for Two", -1, 7, {"destinations": ["jaipur", "jodhpur", "udaipur"], "start_city": "delhi", "adults": 2, "children": 0,
+    (0, "Royal Rajasthan for Two", -1, 7, {"destinations": ["jaipur", "jodhpur", "udaipur"], "start_city": "delhi",
+     "members": [{"name": "Aanya", "age": 29, "interests": ["food", "photography"]}, {"name": "Kabir", "age": 31, "interests": ["heritage", "adventure"]}],
      "budget": 125000, "hotel_tier": "standard", "transport": "best", "interests": ["heritage", "food", "culture", "photography"], "pace": "balanced"}, "active"),
-    (1, "Tigers & Forts Family Trip", -2, 6, {"destinations": ["ranthambore", "jaipur"], "start_city": "delhi", "adults": 2, "children": 2,
-     "budget": 160000, "hotel_tier": "premium", "transport": "best", "interests": ["wildlife", "heritage", "nature"], "pace": "relaxed"}, "operate"),
-    (2, "Crafts & Kitchens of Rajasthan", 6, 8, {"destinations": ["jaipur", "pushkar", "udaipur"], "start_city": "jaipur", "adults": 1, "children": 0,
+    (1, "Three Generations: Tigers & Forts", -2, 6, {"destinations": ["ranthambore", "jaipur"], "start_city": "delhi",
+     "members": [{"name": "Rohan", "age": 45, "interests": ["heritage", "wildlife"]}, {"name": "Meera", "age": 43, "interests": ["culture", "food"]},
+                 {"name": "Ishaan", "age": 20, "interests": ["adventure", "photography", "nightlife"]}, {"name": "Aarav", "age": 5, "interests": ["wildlife"]},
+                 {"name": "Paati", "age": 68, "interests": ["spiritual", "heritage"], "step_free": True, "rest": True}],
+     "budget": 260000, "hotel_tier": "premium", "transport": "best", "interests": ["wildlife", "heritage", "nature"], "pace": "balanced"}, "operate"),
+    (2, "Crafts & Kitchens of Rajasthan", 6, 8, {"destinations": ["jaipur", "pushkar", "udaipur"], "start_city": "jaipur",
+     "members": [{"name": "Sophie", "age": 34, "interests": ["workshop", "food"]}],
      "budget": 80000, "hotel_tier": "standard", "transport": "train", "interests": ["workshop", "food", "culture", "photography"], "pace": "balanced"}, "prepare"),
-    (3, "Lakes & Palaces Getaway", 15, 5, {"destinations": ["udaipur"], "start_city": "udaipur", "adults": 4, "children": 1,
+    (3, "Lakes & Palaces Getaway", 15, 5, {"destinations": ["udaipur"], "start_city": "udaipur",
+     "members": [{"name": "Vikram", "age": 47}, {"name": "Nisha", "age": 44}, {"name": "Dadaji", "age": 76, "step_free": True, "rest": True},
+                 {"name": "Dadi", "age": 72, "rest": True}, {"name": "Tara", "age": 7}],
      "budget": 380000, "hotel_tier": "luxury", "transport": "car", "interests": ["relaxation", "heritage", "food"], "pace": "relaxed"}, "prepare_paid"),
-    (4, "Desert Offsite 2026", 30, 4, {"destinations": ["jaisalmer"], "start_city": "jodhpur", "adults": 14, "children": 0,
+    (4, "Desert Offsite 2026", 30, 4, {"destinations": ["jaisalmer"], "start_city": "jodhpur",
+     "members": [{"name": f"Team {i + 1}", "age": 24 + (i * 7) % 30} for i in range(14)],
      "budget": 320000, "hotel_tier": "standard", "transport": "car", "interests": ["adventure", "culture", "nightlife"], "pace": "packed"}, "draft"),
-    (5, "Golden Triangle Classic", -12, 6, {"destinations": ["agra", "jaipur"], "start_city": "delhi", "adults": 2, "children": 0,
+    (5, "Golden Triangle Classic", -12, 6, {"destinations": ["agra", "jaipur"], "start_city": "delhi",
+     "members": [{"name": "Daniel", "age": 38}, {"name": "Priya", "age": 36}],
      "budget": 130000, "hotel_tier": "premium", "transport": "best", "interests": ["heritage", "culture", "food"], "pace": "balanced"}, "complete"),
-    (6, "Blue & Gold Road Trip", -25, 6, {"destinations": ["jodhpur", "jaisalmer"], "start_city": "jodhpur", "adults": 4, "children": 0,
+    (6, "Blue & Gold Road Trip", -25, 6, {"destinations": ["jodhpur", "jaisalmer"], "start_city": "jodhpur",
+     "members": [{"name": "Arjun", "age": 26}, {"name": "Dev", "age": 27}, {"name": "Rhea", "age": 25}, {"name": "Kunal", "age": 28}],
      "budget": 125000, "hotel_tier": "budget", "transport": "car", "interests": ["adventure", "nightlife", "photography"], "pace": "packed"}, "reviewed"),
 ]
 
@@ -56,13 +68,18 @@ async def reset_and_seed(today: date | None = None) -> dict:
                 vendors[name] = v
             return vendors[name]
 
+        kl = kaggle_lookup()
         for idx, (dest, title, tags, dur, price, op, cl, io, rating, cnt, kids, step, closed, vname, desc) in enumerate(ACTIVITIES):
             v = await vendor(vname, "activity", dest)
             dlat, dlng = _jitter(idx)
+            cat, inten, stairs, walk, seat, shade, min_age, pop, best, kref = ATTRS[title]
+            if kref and kref in kl:
+                pop = kl[kref]["reviews_lakh"]
             o = Offering(vendor_id=v.id, kind="activity", dest_key=dest, title=title, description=desc, tags=tags, duration_min=dur,
                          price=price, open=op, close=cl, indoor_outdoor=io, rating=rating, rating_count=cnt, kid_friendly=kids,
                          step_free=step, closed_weekdays=closed, lat=DESTINATIONS[dest][4] + dlat, lng=DESTINATIONS[dest][5] + dlng,
-                         capacity=12 + idx % 10)
+                         capacity=12 + idx % 10, category=cat, intensity=inten, stairs=stairs, walk_km=walk, seating=seat, shade=shade,
+                         min_age=min_age, popularity=pop, best_time=best, source="curated")
             db.add(o)
             await db.flush()
             for j in range(3):
@@ -70,6 +87,28 @@ async def reset_and_seed(today: date | None = None) -> dict:
                 snip = REVIEW_SNIPPETS[r][(idx + j) % len(REVIEW_SNIPPETS[r])]
                 db.add(Review(offering_id=o.id, author=["Ananya", "Mark", "Riya", "Hiroshi", "Fatima", "Leo"][(idx + j) % 6],
                               rating=r, text=snip, created_at=datetime.utcnow() - timedelta(days=4 + (idx * 7 + j * 19) % 80)))
+        # real attractions from the Kaggle dataset in our destinations, offered as self-guided visits
+        for idx, r in enumerate(kaggle_rows()):
+            dest = CITY_DEST.get(r["city"])
+            if not dest or (r["city"], r["name"]) in KAGGLE_IMPORT_SKIP:
+                continue
+            cat, inten, stairs, walk, seat, shade, indoor, min_age, kids = TYPE_PRIORS.get(r["type"], DEFAULT_TYPE)
+            v = await vendor("Self-guided entry (site office)", "activity", dest)
+            op, cl = CAT_HOURS.get(cat, ("09:00", "18:00"))
+            if r["type"] == "War Memorial":
+                op, cl = "06:00", "22:00"
+            dlat, dlng = _jitter(idx + 7)
+            wk = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}.get(r["weekly_off"])
+            db.add(Offering(vendor_id=v.id, kind="activity", dest_key=dest, title=r["name"],
+                            description=f"{r['type']} · {r['significance']}{' · est. ' + r['year'] if r['year'] not in ('', 'Unknown') else ''}. "
+                                        f"Allow about {r['hours']:g} h; best visited: {r['best_time'] or 'any time'}. Self-guided, entry ticket included.",
+                            tags=CAT_TAGS.get(cat, []), duration_min=int(max(30, min(300, r["hours"] * 60))), price=r["fee"], open=op, close=cl,
+                            indoor_outdoor={1.0: "indoor", 0.5: "mixed"}.get(indoor, "outdoor"), rating=r["rating"],
+                            rating_count=int(r["reviews_lakh"] * 100000), kid_friendly=kids, step_free=stairs < 0.3,
+                            closed_weekdays=[wk] if wk is not None else [], lat=DESTINATIONS[dest][4] + dlat, lng=DESTINATIONS[dest][5] + dlng,
+                            capacity=200, category=cat, intensity=inten, stairs=stairs, walk_km=walk, seating=seat, shade=shade,
+                            min_age=min_age, popularity=r["reviews_lakh"], best_time=r["best_time"] or "all", source="kaggle"))
+        await db.flush()
         for dest, hotels in HOTELS.items():
             for idx, (tier, name, price, rating) in enumerate(hotels):
                 v = await vendor(name, "hotel", dest)
@@ -96,10 +135,11 @@ async def reset_and_seed(today: date | None = None) -> dict:
             start = today + timedelta(days=offset)
             res = P.plan({**prefs, "days": days}, start)
             cust = customers[ci]
-            adults, kids = prefs["adults"], prefs["children"]
+            ages = [m["age"] for m in prefs["members"]]
+            adults, kids = sum(1 for a in ages if a >= 12), sum(1 for a in ages if a < 12)
             tour = Tour(code=f"TC-{2600 + n + 1}", title=title, customer_id=cust.id, start_date=start, days=days, prefs={**prefs, "days": days},
                         group={"name": cust.name, "adults": adults, "children": kids,
-                               "members": [cust.name.split(" ")[0]] + [f"Guest {k + 2}" for k in range(adults + kids - 1)]},
+                               "members": [f"{m['name']} ({m['age']})" for m in prefs["members"]]},
                         route=res["route"], notes=res["warnings"] + res["notes"], checklist={},
                         created_at=datetime.utcnow() - timedelta(days=max(3, 20 - offset)))
             db.add(tour)

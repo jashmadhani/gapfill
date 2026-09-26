@@ -140,7 +140,8 @@ export default function Discover() {
                       <Photo src={destImage(e.dest_key || e.dest_name)} scrim={false} className="h-20 w-20 shrink-0 rounded-2xl" />
                       <div className="min-w-0 flex-1">
                         <div className="line-clamp-2 font-semibold leading-snug text-stone-900">{e.title}</div>
-                        <div className="mt-0.5 text-sm text-stone-500">{e.dest_name} · {Math.round(e.duration_min / 6) / 10} h</div>
+                        <div className="mt-0.5 text-sm text-stone-500">{e.dest_name} · {Math.round(e.duration_min / 6) / 10} h
+                          {e.fit != null && <span className={e.vetoed?.length ? 'text-red-600' : 'text-rani-700'}> · {e.vetoed?.length ? `not for ${e.vetoed[0]}` : `${e.fit}% fit for your group`}</span>}</div>
                         <div className="mt-1 flex items-center justify-between">
                           <span className="font-bold text-stone-900">{inr(e.price)}</span>
                           <span className="inline-flex items-center gap-1 text-sm font-semibold text-stone-700"><Star size={14} className="fill-amber-400 text-amber-400" aria-hidden /> {(e.rating ?? 0).toFixed(1)}</span>

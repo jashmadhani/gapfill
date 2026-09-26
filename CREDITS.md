@@ -14,3 +14,9 @@ Destination photos are loaded from Wikimedia Commons under the licences below.
 | Udaipur | 20191207_Lake_Pichola,_City_Palace,_Udaipur,_1516_7254.jpg | CC BY-SA 4.0 |
 
 Each file is at `https://commons.wikimedia.org/wiki/File:<file name>`, where you can find the author.
+
+# Data credits
+
+| Dataset | Use | Source |
+|---|---|---|
+| *Travel Dataset: Guide to India's Must See Places* ("Top Indian Places to Visit", 325 attractions) by Saket Kumar | Real places for model training; 16 attractions imported as self-guided visits; popularity for curated experiences | kaggle.com/datasets/saketk511/travel-dataset-guide-to-indias-must-see-places (copy at `backend/app/ml/data/kaggle_top_indian_places.csv`) |

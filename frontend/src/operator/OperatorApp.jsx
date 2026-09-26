@@ -1,6 +1,6 @@
 import { createContext, useContext, useState } from 'react'
 import { Link, NavLink, Route, Routes } from 'react-router-dom'
-import { CalendarDays, ClipboardList, LayoutDashboard, Map, MonitorPlay, Radio, Shuffle, Store, Users, Wallet } from 'lucide-react'
+import { BrainCircuit, CalendarDays, ClipboardList, LayoutDashboard, Map, MonitorPlay, Radio, Shuffle, Store, Users, Wallet } from 'lucide-react'
 import { useLive } from '../live'
 import { cx } from '../components/ui'
 import Dashboard from './Dashboard'
@@ -12,6 +12,7 @@ import Vendors from './Vendors'
 import People from './People'
 import Payments from './Payments'
 import Tasks from './Tasks'
+import Model from './Model'
 
 const OpsCtx = createContext({ tick: 0 })
 export const useOps = () => useContext(OpsCtx)
@@ -19,7 +20,7 @@ export const useOps = () => useContext(OpsCtx)
 const NAV = [
   ['/operator', 'Dashboard', LayoutDashboard, true], ['/operator/tours', 'Tours', Map], ['/operator/schedule', 'Today’s operations', CalendarDays],
   ['/operator/changes', 'Changes', Shuffle], ['/operator/tasks', 'Coordination', ClipboardList], ['/operator/vendors', 'Vendors', Store],
-  ['/operator/people', 'Customers & team', Users], ['/operator/payments', 'Payments', Wallet],
+  ['/operator/people', 'Customers & team', Users], ['/operator/payments', 'Payments', Wallet], ['/operator/model', 'Planning model', BrainCircuit],
 ]
 
 // Operator console: one place to run every customised tour — lifecycle, vendors, coordinators, payments and live changes.
@@ -68,6 +69,7 @@ export default function OperatorApp() {
               <Route path="vendors" element={<Vendors />} />
               <Route path="people" element={<People />} />
               <Route path="payments" element={<Payments />} />
+              <Route path="model" element={<Model />} />
             </Routes>
           </main>
         </div>

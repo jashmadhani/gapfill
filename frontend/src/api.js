@@ -66,3 +66,13 @@ export function fmtTime(hhmm) {
   const [h, m] = hhmm.split(':').map(Number)
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`
 }
+
+Object.assign(api, {
+  retime: (id, itemId, start_min) => req('POST', `/tours/${id}/items/${itemId}/retime`, { start_min }),
+  moodCheckin: (id, body) => req('POST', `/tours/${id}/mood`, body),
+  parseMood: (text) => req('POST', '/ml/mood', { text }),
+  offeringInsights: (id, tourId) => req('GET', `/offerings/${id}/insights${tourId ? `?tour_id=${tourId}` : ''}`),
+  mlMetrics: () => req('GET', '/ml/metrics'),
+  mlRetrain: () => req('POST', '/ml/retrain'),
+  mlPredict: (body) => req('POST', '/ml/predict', body),
+})

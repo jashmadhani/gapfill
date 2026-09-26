@@ -11,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .catalog import PACES, TIERS
+from .ml import infer as ML
+from .ml.data import offering_place
 from .models import Destination, Offering, Review, Vendor
 
 SERVICE_FEE = 0.08  # operator coordination fee
@@ -41,6 +43,8 @@ async def load_world(db: AsyncSession):
             n = d["rating_count"]
             d["rating"] = round((d["rating"] * n + sum(extra[o.id])) / (n + len(extra[o.id])), 2)
             d["rating_count"] = n + len(extra[o.id])
+        if d["kind"] == "activity":
+            d["place"] = offering_place(d)
         W["offerings"][o.id] = d
 
 
@@ -118,17 +122,33 @@ def fmt_inr(n) -> str:
 
 
 # ---------------------------------------------------------------- context
+def default_members(prefs: dict) -> list:
+    """The travelling group as people. Older tours without a member list get a sensible default from the headcount."""
+    ms = prefs.get("members") or []
+    if ms:
+        return [{"name": (m.get("name") or f"Traveler {i + 1}").strip(), "age": int(m.get("age") or 35),
+                 "interests": m.get("interests") or [], "step_free": bool(m.get("step_free")), "rest": bool(m.get("rest"))}
+                for i, m in enumerate(ms)]
+    adults, children = int(prefs.get("adults", 2) or 1), int(prefs.get("children", 0) or 0)
+    step = bool((prefs.get("needs") or {}).get("step_free"))
+    out = [{"name": "You" if i == 0 else f"Adult {i + 1}", "age": 34 if i % 2 == 0 else 32, "interests": [], "step_free": step and i == 0,
+            "rest": False} for i in range(adults)]
+    out += [{"name": f"Child {i + 1}", "age": 8, "interests": [], "step_free": False, "rest": False} for i in range(children)]
+    return out
+
+
 def make_ctx(prefs: dict, start_date: date, days: int, route: list, rain: list | None = None) -> dict:
-    adults = int(prefs.get("adults", 2) or 1)
-    children = int(prefs.get("children", 0) or 0)
+    members = default_members(prefs)
+    ages = [m["age"] for m in members]
+    adults = sum(1 for a in ages if a >= 12) or 1
     return {
-        "start_date": start_date, "days": days, "route": route,
-        "adults": adults, "children": children, "travelers": adults + children,
-        "rooms": max(1, math.ceil(adults / 2)),
-        "interests": prefs.get("interests") or [], "pace": prefs.get("pace", "balanced"),
-        "needs": prefs.get("needs") or {}, "budget": float(prefs.get("budget") or 0),
+        "start_date": start_date, "days": days, "route": route, "members": members,
+        "adults": adults, "children": len(ages) - adults, "travelers": len(members),
+        "rooms": max(1, math.ceil(max(1, sum(1 for a in ages if a >= 18)) / 2)),
+        "interests": prefs.get("interests") or [], "pace": prefs.get("pace", "balanced"), "moods": list(prefs.get("mood") or []),
+        "needs": {"step_free": any(m["step_free"] for m in members)}, "budget": float(prefs.get("budget") or 0),
         "tier": prefs.get("hotel_tier", "standard"), "transport": prefs.get("transport", "best"),
-        "rain": {(r["dest"], r["date"]) for r in (rain or [])},
+        "rain": {(r["dest"], r["date"]) for r in (rain or [])}, "_fit": {}, "_weights": {},
     }
 
 
@@ -155,30 +175,71 @@ def interest_match(o, interests) -> list:
     return [t for t in o.get("tags", []) if t in interests]
 
 
-def act_score(o, ctx, day=None) -> float:
-    m = len(interest_match(o, ctx["interests"]))
+def item_members(i: dict, ctx) -> list:
+    """Who an item is for: split-track items carry their sub-group, everything else is the whole group."""
+    names = (i.get("meta") or {}).get("members")
+    if not names:
+        return ctx["members"]
+    return [m for m in ctx["members"] if m["name"] in names] or ctx["members"]
+
+
+def candidate_starts(o) -> list:
+    op, last = hm(o["open"]), hm(o["close"]) - o["duration_min"]
+    if last < op:
+        return [op]
+    return sorted({min(max(t, op), last) for t in (op + 30, 11 * 60, 15 * 60, 18 * 60)})
+
+
+def ml_ctx(o, ctx, day, start) -> dict:
+    d = day_date(ctx, day) if day else ctx["start_date"]
+    rain = rain_on(ctx, o["dest_key"], day) if day else False
+    return {"start_min": start, "month": d.month, "rain": rain, "moods": ctx.get("moods", []), "group_interests": ctx["interests"],
+            "crowd": ML.crowd(o["place"], d, start / 60 + o["duration_min"] / 120, rain)}
+
+
+def evaluate(o, ctx, day=None, start=None, members=None, reasons=False) -> dict:
+    """ML group fit for an activity: per-person predicted enjoyment, safety vetoes, and the fair group score.
+    With no start time, the best time of day within opening hours is used."""
+    members = members or ctx["members"]
+    key = (o["id"], day, start, tuple(m["name"] for m in members), reasons, tuple(sorted(ctx["_weights"].items())), tuple(ctx.get("moods", [])))
+    if key in ctx["_fit"]:
+        return ctx["_fit"][key]
+    best = None
+    for st in ([start] if start is not None else candidate_starts(o)):
+        mc = ml_ctx(o, ctx, day, st)
+        res = ML.member_fits(members, o["place"], mc, with_reasons=reasons)
+        ok = [r for r in res if not r["veto"]]
+        g = ML.group_fit(ok or res, ctx["_weights"])
+        cand = {"fit": 0 if len(ok) < len(res) else g, "fit_eligible": g, "members": res, "vetoed": [r for r in res if r["veto"]],
+                "start": st, "crowd": mc["crowd"]}
+        if best is None or cand["fit_eligible"] > best["fit_eligible"]:
+            best = cand
+    ctx["_fit"][key] = best
+    return best
+
+
+def act_score(o, ctx, day=None, start=None, members=None) -> float:
     per_day = max(800, ctx["budget"] * 0.22 / max(1, ctx["travelers"]) / max(1, ctx["days"])) if ctx["budget"] else 2500
-    s = m * 3 + (o["rating"] - 4) * 4 + math.log10(max(10, o["rating_count"])) - o["price"] / per_day
-    if day and o["indoor_outdoor"] == "outdoor" and rain_on(ctx, o["dest_key"], day):
-        s -= 4
-    return round(s, 3)
+    return round(evaluate(o, ctx, day, start, members)["fit_eligible"] / 8 - o["price"] / per_day, 3)
 
 
-def act_allowed(o, ctx, day=None, check_status=True) -> str | None:
-    """Returns a reason string if the activity can't be used, else None."""
+def act_allowed(o, ctx, day=None, check_status=True, members=None) -> str | None:
+    """Returns a reason string if the activity can't be used, else None. Safety/access vetoes are hard rules."""
     if check_status and not o["available"]:
         return "unavailable"
-    if ctx["children"] and not o["kid_friendly"]:
-        return "not suitable for children"
-    if ctx["needs"].get("step_free") and not o["step_free"]:
-        return "not step-free"
+    for m in members or ctx["members"]:
+        v = ML.veto(m, o["place"])
+        if v:
+            return f"not for {m['name']} ({m['age']}) — {v}"
     if day and day_date(ctx, day).weekday() in (o.get("closed_weekdays") or []):
         return "closed that day"
     return None
 
 
-def fit_reason(o, ctx, st=None, en=None, delta=None) -> str:
+def fit_reason(o, ctx, st=None, en=None, delta=None, fit=None) -> str:
     bits = []
+    if fit is not None:
+        bits.append(f"group fit {fit}%")
     m = interest_match(o, ctx["interests"])
     if m:
         bits.append("matches your " + " & ".join(m[:2]) + " interests")
@@ -216,8 +277,8 @@ def recommend_destinations(interests: list, limit=8) -> list:
     return out[:limit]
 
 
-def recommend_experiences(interests: list, dests: list | None = None, limit=10) -> list:
-    ctx = {"interests": interests, "budget": 0, "travelers": 2, "days": 5, "rain": set(), "children": 0, "needs": {}}
+def recommend_experiences(interests: list, dests: list | None = None, limit=10, ctx=None) -> list:
+    ctx = ctx or make_ctx({"interests": interests}, date.today(), 1, [])
     pool = [o for o in W["offerings"].values() if o["kind"] == "activity" and o["available"]
             and (not dests or o["dest_key"] in dests)]
     pool.sort(key=lambda o: -act_score(o, ctx))
@@ -291,11 +352,21 @@ def hotel_item(h, day, nights, ctx, checkin=CHECKIN) -> dict:
             "price": h["price"] * ctx["rooms"] * nights, "meta": {"tier": h["tier"]}}
 
 
-def activity_item(o, day, st, ctx) -> dict:
+def activity_item(o, day, st, ctx, members=None, meta=None) -> dict:
+    n = len(members) if members else ctx["travelers"]
+    m = {"io": o["indoor_outdoor"]}
+    if members:
+        m["members"] = [x["name"] for x in members]
     return {"day": day, "kind": "activity", "offering_id": o["id"], "vendor_id": o["vendor_id"],
             "title": o["title"], "dest_key": o["dest_key"], "from_key": None, "start_min": st,
-            "end_min": st + o["duration_min"], "nights": 0, "qty": ctx["travelers"], "unit_price": o["price"],
-            "price": o["price"] * ctx["travelers"], "meta": {"io": o["indoor_outdoor"]}}
+            "end_min": st + o["duration_min"], "nights": 0, "qty": n, "unit_price": o["price"],
+            "price": o["price"] * n, "meta": m | (meta or {})}
+
+
+def rest_item(day, dest, why) -> dict:
+    return {"day": day, "kind": "rest", "offering_id": None, "vendor_id": None, "title": "Rest & recharge at the hotel",
+            "dest_key": dest, "from_key": None, "start_min": 13 * 60 + 30, "end_min": 15 * 60, "nights": 0, "qty": 0,
+            "unit_price": 0, "price": 0, "meta": {"why": why}}
 
 
 def pick_hotel(dest, ctx) -> dict | None:
@@ -312,6 +383,11 @@ def pick_hotel(dest, ctx) -> dict | None:
 def day_window(ctx, day, items) -> tuple[int, int]:
     s, e, _ = PACES.get(ctx["pace"], PACES["balanced"])
     start, end = hm(s), hm(e)
+    ages = [m["age"] for m in ctx.get("members", [])]
+    if any(a <= 7 or a >= 75 for a in ages):  # the day ends when the youngest / oldest member needs it to
+        end = min(end, hm("20:00"))
+    elif any(a <= 12 or a >= 60 for a in ages):
+        end = min(end, hm("20:45"))
     for t in items:
         if t["kind"] != "transport" or t["day"] != day or not live(t):
             continue
@@ -328,7 +404,11 @@ def pack(acts: list, start: int, end: int, anchor=None, fixed: list | None = Non
     for order in (lambda o: (hm(o["open"]), hm(o["close"])), lambda o: (hm(o["close"]), hm(o["open"]))):
         cur, loc, out, ok = start, anchor, [], True
         for o in sorted(acts, key=order):
-            st = max(cur + (local_min(loc, pt(o)) if out or anchor else 0), hm(o["open"]))
+            # sunrise-only experiences (e.g. morning safaris) may start before the day's usual start
+            lo = start if hm(o["close"]) - o["duration_min"] >= start or out else max(hm(o["open"]), start - 180)
+            st = max((cur if out else lo) + (local_min(loc, pt(o)) if out or anchor else 0), hm(o["open"]))
+            if not out and lo < start:
+                st = max(lo, hm(o["open"]))
             for fs, fe in sorted(fixed or []):
                 if st < fe and st + o["duration_min"] > fs:
                     st = max(st, fe + 20)
@@ -343,25 +423,102 @@ def pack(acts: list, start: int, end: int, anchor=None, fixed: list | None = Non
     return None
 
 
+def blocks(items, day, exclude=None, split=None) -> list:
+    return sorted([(i["start_min"], i["end_min"]) for i in items if live(i) and i["day"] == day and i.get("id", -1) != exclude
+                   and i["kind"] in ("activity", "transport", "rest") and not (split and (i.get("meta") or {}).get("split") == split)])
+
+
+def group_limits(ctx) -> tuple:
+    """Activities per day and high-intensity stops per day, set by the most vulnerable member and the mood."""
+    cap = PACES.get(ctx["pace"], PACES["balanced"])[2]
+    ages = [m["age"] for m in ctx["members"]]
+    if any(a <= 7 or a >= 75 for a in ages):
+        cap = min(cap, 3 if ctx["pace"] == "packed" else 2)
+    elif any(a >= 60 for a in ages):
+        cap = min(cap, 3)
+    if "tired" in ctx.get("moods", []):
+        cap = max(1, cap - 1)
+    hi = 1 if any(a <= 7 or a >= 60 for a in ages) or "tired" in ctx.get("moods", []) else 9
+    return cap, hi
+
+
+def rest_reason(ctx) -> str | None:
+    who = [f"{m['name']} ({m['age']})" for m in ctx["members"] if m["age"] <= 7 or m["age"] >= 65 or m.get("rest")]
+    if "tired" in ctx.get("moods", []):
+        return "Everyone is tired: a proper afternoon break" + (f", especially for {', '.join(who)}" if who else "")
+    if who and not (ctx["pace"] == "packed" and all(m["age"] > 5 for m in ctx["members"])):
+        return f"Afternoon break for {', '.join(who)} during the hottest hours"
+    return None
+
+
+def split_track(ctx, day, items, used, fixed) -> list:
+    """When the best thing for part of the group can't include everyone (age / stairs), run two activities in parallel
+    and meet afterwards."""
+    dest = dest_for_day(ctx, day)
+    members = ctx["members"]
+    xs = [o for o in acts_in(dest) if o["id"] not in used and o["available"]
+          and day_date(ctx, day).weekday() not in (o.get("closed_weekdays") or [])]
+    best = None
+    for x in xs:
+        a = [m for m in members if not ML.veto(m, x["place"])]
+        b = [m for m in members if m not in a]
+        if not a or not b:
+            continue
+        ev = evaluate(x, ctx, day, None, members=a)
+        if ev["fit_eligible"] < 70:
+            continue
+        slot = free_slot(items, day, x, ctx)
+        if not slot:
+            continue
+        st = slot[0]
+        for y in xs:
+            if y is x or any(ML.veto(m, y["place"]) for m in b):
+                continue
+            f = fit_in_window(y, st, st + x["duration_min"] + 45)
+            if not f or f[0] != st or any(st < be and f[1] > bs for bs, be in blocks(items, day)):
+                continue
+            evy = evaluate(y, ctx, day, st, members=b)
+            if evy["fit_eligible"] < 50:
+                continue
+            score = ev["fit_eligible"] + evy["fit_eligible"]
+            if not best or score > best[0]:
+                best = (score, x, a, y, b, st)
+    if not best:
+        return []
+    _, x, a, y, b, st = best
+    sid = f"d{day}"
+    meet = label(max(st + x["duration_min"], st + y["duration_min"]) + 15)
+    return [activity_item(x, day, st, ctx, a, {"split": sid, "track": "A", "partner": y["title"], "meet": meet}),
+            activity_item(y, day, st, ctx, b, {"split": sid, "track": "B", "partner": x["title"], "meet": meet})]
+
+
 def schedule_day(ctx, day, items, used: set) -> list:
     dest = dest_for_day(ctx, day)
     start, end = day_window(ctx, day, items)
     if end - start < 60 or not dest:
         return []
-    cap = PACES.get(ctx["pace"], PACES["balanced"])[2]
+    cap, max_hi = group_limits(ctx)
+    fixed = blocks(items, day)
     cands = [o for o in acts_in(dest) if o["id"] not in used and not act_allowed(o, ctx, day)]
     cands.sort(key=lambda o: -act_score(o, ctx, day))
     chosen: list = []
     best = []
+    hi = 0
     anchor = (W["dests"][dest]["lat"], W["dests"][dest]["lng"])
     for o in cands:
         if len(chosen) >= cap:
             break
-        trial = pack(chosen + [o], start, end, anchor)
+        if o.get("intensity", 2) >= 4 and hi >= max_hi:
+            continue
+        trial = pack(chosen + [o], start, end, anchor, fixed)
         if trial:
             chosen.append(o)
             best = trial
-    return [activity_item(o, day, st, ctx) for o, st, _ in best]
+            hi += o.get("intensity", 2) >= 4
+    out = [activity_item(o, day, st, ctx) for o, st, _ in best]
+    if len(ctx["members"]) >= 2:
+        out += split_track(ctx, day, items + out, used | {o["id"] for o in chosen}, fixed)
+    return out
 
 
 # ---------------------------------------------------------------- whole-tour planning
@@ -420,12 +577,25 @@ def build_items(ctx, start_city: str, end_city: str, warnings: list, keep_activi
             if h["tier"] != ctx["tier"]:
                 warnings.append(f"{h['title']} is {h['tier']} (you asked for {ctx['tier']}) — "
                                 f"{'lift access for step-free needs' if ctx['needs'].get('step_free') else 'closest available'}.")
-    # activities
+    # rest blocks for the youngest / oldest / tired
+    why = rest_reason(ctx)
+    if why:
+        for d in range(1, days + 1):
+            ws, we = day_window(ctx, d, items)
+            if ws <= 12 * 60 + 30 and we >= 16 * 60 + 30:
+                items.append(rest_item(d, dest_for_day(ctx, d), why))
+    # activities, day by day, rebalancing so nobody is left behind across the trip
     used = set(keep_activities or [])
+    sat = {m["name"]: 0.0 for m in ctx["members"]}
     for d in range(1, days + 1):
         for a in schedule_day(ctx, d, items, used):
             used.add(a["offering_id"])
             items.append(a)
+            for r in evaluate(off(a["offering_id"]), ctx, d, a["start_min"], item_members(a, ctx))["members"]:
+                sat[r["name"]] += r["fit"]
+        avg = sum(sat.values()) / max(1, len(sat))
+        ctx["_weights"] = {n: max(0.7, min(1.6, 1 + 0.6 * (avg - v) / max(avg, 1))) for n, v in sat.items()}
+    ctx["_weights"] = {}
     return items
 
 
@@ -503,7 +673,7 @@ def optimise(items: list, ctx, frozen=(), kinds=("transport", "hotel", "activity
                                       ("transport", i, q)))
             elif i["kind"] == "hotel":
                 cur = TIERS.index(i["meta"]["tier"])
-                if cur > 0:
+                if cur > (2 if ctx["needs"].get("step_free") else 0):  # keep lifts for step-free travelers
                     lower = [h for h in hotels_in(i["dest_key"]) if TIERS.index(h["tier"]) == cur - 1 and h["available"]]
                     if lower:
                         h = lower[0]
@@ -544,6 +714,8 @@ def conflicts(items: list, ctx) -> list:
     for d in range(1, ctx["days"] + 1):
         day_items = sorted([i for i in timed if i["day"] == d], key=lambda i: i["start_min"])
         for a, b in zip(day_items, day_items[1:]):
+            if (a.get("meta") or {}).get("split") and (a.get("meta") or {}).get("split") == (b.get("meta") or {}).get("split"):
+                continue
             if b["start_min"] < a["end_min"]:
                 out.append({"level": "error", "day": d, "item_id": b.get("id"),
                             "text": f"Day {d}: {b['title']} overlaps {a['title']}."})
@@ -560,7 +732,7 @@ def conflicts(items: list, ctx) -> list:
             if i["start_min"] < hm(o["open"]) or i["end_min"] > hm(o["close"]):
                 out.append({"level": "error", "day": d, "item_id": i.get("id"),
                             "text": f"Day {d}: {o['title']} is only open {o['open']}–{o['close']}."})
-            why = act_allowed(o, ctx, d)
+            why = act_allowed(o, ctx, d, members=item_members(i, ctx))
             if why:
                 out.append({"level": "error", "day": d, "item_id": i.get("id"), "text": f"Day {d}: {o['title']} — {why}."})
             if o["dest_key"] != dest and not any(t["kind"] == "transport" and t["day"] == d for t in timed):
@@ -584,8 +756,11 @@ def conflicts(items: list, ctx) -> list:
 # ---------------------------------------------------------------- alternatives (Compare)
 def slot_window(items, item, ctx) -> tuple[int, int]:
     start, end = day_window(ctx, item["day"], items)
+    sid = (item.get("meta") or {}).get("split")
     for o in items:
-        if not live(o) or o is item or o.get("id") == item.get("id") or o["day"] != item["day"] or o["kind"] not in ("activity", "transport"):
+        if not live(o) or o is item or o.get("id") == item.get("id") or o["day"] != item["day"] or o["kind"] not in ("activity", "transport", "rest"):
+            continue
+        if sid and (o.get("meta") or {}).get("split") == sid:
             continue
         if o["end_min"] <= item["start_min"]:
             start = max(start, o["end_min"] + (45 if o["kind"] == "transport" else 15))
@@ -609,19 +784,21 @@ def activity_alternatives(items, item, ctx, limit=6, indoor_only=False, exclude=
     dest = dest_for_day(ctx, item["day"])
     start, end = slot_window(items, item, ctx)
     used = {i["offering_id"] for i in items if live(i) and i["kind"] == "activity"}
+    who = item_members(item, ctx)
     out = []
     for o in acts_in(dest):
-        if o["id"] in used or o["id"] in exclude or act_allowed(o, ctx, item["day"]):
+        if o["id"] in used or o["id"] in exclude or act_allowed(o, ctx, item["day"], members=who):
             continue
         if indoor_only and o["indoor_outdoor"] == "outdoor":
             continue
         f = fit_in_window(o, start, end, prefer=item["start_min"])
         if not f:
             continue
-        delta = o["price"] * ctx["travelers"] - (item["price"] if live(item) else 0)
-        out.append({"offering": o, "start_min": f[0], "end_min": f[1], "price": o["price"] * ctx["travelers"],
-                    "delta": delta, "score": act_score(o, ctx, item["day"]),
-                    "reason": fit_reason(o, ctx, f[0], f[1], delta)})
+        delta = o["price"] * len(who) - (item["price"] if live(item) else 0)
+        ev = evaluate(o, ctx, item["day"], f[0], who)
+        out.append({"offering": o, "start_min": f[0], "end_min": f[1], "price": o["price"] * len(who), "members": who,
+                    "delta": delta, "score": act_score(o, ctx, item["day"], f[0], who), "fit": ev["fit_eligible"],
+                    "member_fits": ev["members"], "crowd": ev["crowd"], "reason": fit_reason(o, ctx, f[0], f[1], delta, ev["fit_eligible"])})
     out.sort(key=lambda a: -a["score"])
     return out[:limit]
 
@@ -659,10 +836,10 @@ def transport_alternatives(items, item, ctx) -> list:
 def free_slot(items, day, o, ctx) -> tuple[int, int] | None:
     """Earliest window on `day` where activity o fits without moving anything else."""
     start, end = day_window(ctx, day, items)
-    blocks = sorted([(i["start_min"], i["end_min"]) for i in items if live(i) and i["day"] == day
-                     and i["kind"] in ("activity", "transport")])
+    if hm(o["close"]) - o["duration_min"] < start and not any(i["kind"] == "transport" and i["day"] == day and live(i) for i in items):
+        start = max(hm(o["open"]), start - 180)  # sunrise-only experience
     cur = start
-    for bs, be in blocks + [(end + 15, end + 15)]:
+    for bs, be in blocks(items, day) + [(end + 15, end + 15)]:
         f = fit_in_window(o, cur, bs - 15)
         if f and f[1] <= end:
             return f

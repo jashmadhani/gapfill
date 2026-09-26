@@ -5,7 +5,8 @@ import {
 } from 'lucide-react'
 import { api, fmtDate, fmtTime, inr } from '../api'
 import { useTour } from '../store'
-import DayTimeline, { VENDOR_CHIP } from '../components/DayTimeline'
+import DayTimeline, { VENDOR_CHIP, useTagAction } from '../components/DayTimeline'
+import { MOOD } from '../components/group'
 import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Spinner, cx } from '../components/ui'
 import { destImage } from '../media'
 
@@ -61,8 +62,53 @@ function Changes({ tour }) {
   )
 }
 
+// Daily mood check-in: free text is read by the mood model, then the rest of the day is re-scored for everyone.
+function MoodCheckin({ tour }) {
+  const { notify, refresh } = useTour()
+  const [text, setText] = useState('')
+  const [picked, setPicked] = useState([])
+  const [busy, setBusy] = useState(false)
+  const current = tour.moods || []
+  const send = async (e) => {
+    e?.preventDefault()
+    if (!text.trim() && !picked.length) return
+    setBusy(true)
+    try {
+      const r = await api.moodCheckin(tour.id, { text, moods: picked })
+      if (!r.events.length) notify(r.note || 'Noted — your plan already suits that.')
+      setText(''); setPicked([])
+      refresh()
+    } catch (err) { notify(err.message, 'error') } finally { setBusy(false) }
+  }
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-base font-bold">How’s everyone feeling?</h2>
+          <p className="text-xs text-stone-500">We’ll re-score the rest of today for each person and suggest changes.</p>
+        </div>
+        {current.length > 0 && <div className="flex flex-wrap justify-end gap-1">{current.map((k) => MOOD[k] && <Chip key={k} tone="rani">{MOOD[k].label}</Chip>)}</div>}
+      </div>
+      <div className="no-scrollbar -mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1">
+        {Object.entries(MOOD).map(([k, { label, Icon }]) => (
+          <button type="button" key={k} aria-pressed={picked.includes(k)} onClick={() => setPicked((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k])}
+            className={cx('inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-semibold ring-1', picked.includes(k) ? 'bg-rani-600 text-white ring-rani-600' : 'bg-white text-stone-600 ring-stone-200')}>
+            <Icon size={13} aria-hidden /> {label}
+          </button>
+        ))}
+      </div>
+      <form onSubmit={send} className="mt-2 flex gap-2">
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="or say it: “Paati is worn out and it’s boiling”"
+          className="min-h-11 min-w-0 flex-1 rounded-full bg-sand-50 px-4 text-sm ring-1 ring-stone-200 focus:outline-none focus:ring-2 focus:ring-rani-500" />
+        <Button type="submit" disabled={busy || (!text.trim() && !picked.length)}>{busy ? '…' : 'Check in'}</Button>
+      </form>
+    </Card>
+  )
+}
+
 function Operate({ tour, state, onFix }) {
-  const { notify } = useTour()
+  const { notify, refresh } = useTour()
+  const [tagBusy, onTag] = useTagAction(tour, refresh, notify)
   const [late, setLate] = useState(30)
   const [busy, setBusy] = useState(false)
   const today = tour.days_detail[tour.current_day - 1]
@@ -115,6 +161,7 @@ function Operate({ tour, state, onFix }) {
       ) : <Empty title="You're done for today">Rest up — tomorrow is ready below.</Empty>}
 
       <Risks tour={tour} onFix={onFix} />
+      <MoodCheckin tour={tour} />
 
       <Card className="space-y-2 p-3">
         <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Something changed?</div>
@@ -128,7 +175,7 @@ function Operate({ tour, state, onFix }) {
         </div>
       </Card>
 
-      <DayTimeline d={today} editable risks={tour.risks} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} />
+      <DayTimeline d={today} editable risks={tour.risks} onAction={onTag} busy={tagBusy} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} />
       {tomorrow && <div className="opacity-80"><DayTimeline d={tomorrow} compact risks={tour.risks} /></div>}
       <Changes tour={tour} />
       <Coordinator c={tour.coordinator} />

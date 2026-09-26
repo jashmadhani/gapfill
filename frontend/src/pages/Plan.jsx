@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ChevronDown, CircleAlert, Lightbulb, Plus, RefreshCw, TriangleAlert, Wallet, Wand2 } from 'lucide-react'
 import { api, fmtDate, inr } from '../api'
 import { useTour } from '../store'
-import DayTimeline from '../components/DayTimeline'
+import DayTimeline, { useTagAction } from '../components/DayTimeline'
+import Considered from '../components/Considered'
+import { GroupFairness } from '../components/group'
 import { Bar, Button, Card, Empty, JourneyStrip, MODE, PACE_LABEL, Spinner, TIER_LABEL, cx } from '../components/ui'
 
 function AddPicker({ tour, d, onDone }) {
@@ -48,6 +50,7 @@ export default function Plan() {
   const [busy, setBusy] = useState(false)
   const [showNotes, setShowNotes] = useState(true)
   const [history, setHistory] = useState(false)
+  const [tagBusy, onTag] = useTagAction(tour, refresh, notify)
   if (!state) return <Spinner />
   if (!tour) return <div className="px-4 pt-5"><Empty title="No tour yet" action={<Link to="/personalize"><Button>Design a tour</Button></Link>}>Tell us your dates, budget and interests to get an optimised plan.</Empty></div>
 
@@ -69,9 +72,10 @@ export default function Plan() {
     <div>
       <header className="px-4 pt-5 pb-3">
         <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{tour.code} · {draft ? 'Draft plan' : 'Booked'}</div>
-        <h1 className="text-2xl font-bold leading-tight tracking-tight">{tour.title}</h1>
+        <h1 className="font-display text-3xl leading-tight">{tour.title}</h1>
         <p className="text-sm text-stone-500">
-          {fmtDate(tour.start_date)} – {fmtDate(tour.end_date)} · {tour.days} days · {tour.group.adults} adult{tour.group.adults > 1 ? 's' : ''}{tour.group.children ? ` + ${tour.group.children} child${tour.group.children > 1 ? 'ren' : ''}` : ''}
+          {fmtDate(tour.start_date)} – {fmtDate(tour.end_date)} · {tour.days} days · {tour.members?.length || tour.travelers} travelers
+          {tour.members?.length > 0 && <> ({tour.members.map((m) => `${m.name} ${m.age}`).join(', ')})</>}
         </p>
         <p className="mt-0.5 text-xs text-stone-500">{TIER_LABEL[tour.prefs.hotel_tier]} stays · {MODE[tour.prefs.transport]?.label} · {PACE_LABEL[tour.prefs.pace]} pace</p>
       </header>
@@ -108,6 +112,8 @@ export default function Plan() {
           )}
         </Card>
 
+        <GroupFairness group={tour.group_fit} members={tour.members} />
+
         {tour.notes.length > 0 && (
           <Card className="bg-amber-50/60 p-3 ring-amber-200">
             <button onClick={() => setShowNotes((s) => !s)} className="flex w-full items-center justify-between text-xs font-semibold uppercase tracking-wide text-amber-800">
@@ -135,14 +141,16 @@ export default function Plan() {
         </div>
         <div className="space-y-5">
           {tour.days_detail.map((d) => (
-            <DayTimeline key={d.day} d={d} editable={editable} onRemove={remove} risks={tour.risks} showHistory={history}>
+            <DayTimeline key={d.day} d={d} editable={editable} onRemove={remove} onAction={onTag} busy={tagBusy} risks={tour.risks} showHistory={history}>
               {editable && (!tour.current_day || d.day >= tour.current_day) && <AddPicker tour={tour} d={d} onDone={refresh} />}
             </DayTimeline>
           ))}
         </div>
+
+        <div className="pt-4"><Considered tour={tour} editable={editable} onChanged={refresh} /></div>
       </section>
 
-      <div className="sticky bottom-16 z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-4 pb-3 pt-4">
+      <div className="sticky bottom-24 z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-4 pb-3 pt-4">
         {draft ? (
           <Button className="w-full" disabled={busy} onClick={() => nav('/price')}>
             {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? 's' : ''} to book` : `Review price & book · ${inr(p.total)}`}
