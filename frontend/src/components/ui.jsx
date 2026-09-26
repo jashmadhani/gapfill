@@ -1,102 +1,145 @@
-import { Accessibility, Armchair, Bath, CloudRain, Star, Sun, Umbrella, VolumeX } from 'lucide-react'
+import { Accessibility, Armchair, Bath, CloudRain, Moon, Monitor, Star, Sun, Umbrella, VolumeX } from 'lucide-react'
+import { useTheme } from '../theme'
 
 export const ACCESS = {
   step_free: { label: 'Step-free', Icon: Accessibility },
   seating_available: { label: 'Seating', Icon: Armchair },
   restroom_onsite: { label: 'Restroom', Icon: Bath },
-  sensory_friendly: { label: 'Quiet / sensory-friendly', Icon: VolumeX },
+  sensory_friendly: { label: 'Quiet space', Icon: VolumeX },
 }
 
-export const GROUP_LABEL = { solo: 'Solo', couple: 'Couple', family: 'Family', large_group: 'Large group' }
+export const GROUP_LABEL = { solo: 'Solo', couple: 'Couple', family: 'Family', large_group: 'Group' }
 
 export function cx(...a) {
   return a.filter(Boolean).join(' ')
 }
 
-export function Button({ variant = 'primary', className, ...p }) {
-  const styles = {
-    primary: 'bg-rani-600 text-white hover:bg-rani-700 active:bg-rani-900 shadow-sm',
-    secondary: 'bg-white text-stone-800 ring-1 ring-stone-200 hover:bg-stone-50',
-    ghost: 'text-stone-600 hover:bg-stone-100',
-    dark: 'bg-stone-900 text-white hover:bg-stone-800',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
-  }
+const BTN = {
+  primary: 'bg-brand text-on-brand hover:bg-brand-hover shadow-card',
+  secondary: 'bg-surface text-ink ring-1 ring-line hover:bg-surface-2',
+  ghost: 'text-ink-2 hover:bg-surface-2 hover:text-ink',
+  accent: 'bg-accent text-on-brand hover:opacity-90',
+  danger: 'bg-danger text-on-brand hover:opacity-90',
+}
+
+export function Button({ variant = 'primary', size = 'md', className, ...p }) {
   return (
     <button
-      className={cx('inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
+      className={cx(
+        'inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none',
+        size === 'sm' ? 'min-h-11 px-3 text-sm' : 'min-h-12 px-4 text-[15px]',
+        BTN[variant], className)}
       {...p}
     />
   )
 }
 
-export function Card({ className, ...p }) {
-  return <div className={cx('rounded-2xl bg-white ring-1 ring-stone-200/80 shadow-[0_1px_2px_rgba(0,0,0,.04)]', className)} {...p} />
+export function Card({ className, as: Tag = 'div', ...p }) {
+  return <Tag className={cx('rounded-2xl bg-surface ring-1 ring-line shadow-card', className)} {...p} />
 }
 
-export function Chip({ className, children, tone = 'stone' }) {
-  const tones = {
-    stone: 'bg-stone-100 text-stone-700',
-    rani: 'bg-rani-50 text-rani-700',
-    green: 'bg-emerald-50 text-emerald-700',
-    amber: 'bg-amber-50 text-amber-800',
-    red: 'bg-red-50 text-red-700',
-    blue: 'bg-sky-50 text-sky-700',
-  }
-  return <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium', tones[tone], className)}>{children}</span>
+const CHIP = {
+  neutral: 'bg-surface-2 text-ink-2',
+  brand: 'bg-brand-soft text-brand-ink',
+  accent: 'bg-accent-soft text-accent-ink',
+  success: 'bg-success-soft text-success',
+  warn: 'bg-warn-soft text-warn',
+  danger: 'bg-danger-soft text-danger',
+}
+
+export function Chip({ className, children, tone = 'neutral' }) {
+  return <span className={cx('inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium', CHIP[tone], className)}>{children}</span>
 }
 
 export function TrustBadge({ exp, showSummary = false }) {
   const s = exp.trust_score ?? 0
   return (
     <span className="inline-flex flex-col">
-      <span className="inline-flex items-center gap-1 text-sm font-semibold text-stone-800">
-        <Star size={14} className="fill-amber-400 text-amber-400" /> {s.toFixed(1)}
-        <span className="font-normal text-stone-500">({exp.trust_meta?.count ?? 0})</span>
+      <span className="inline-flex items-center gap-1 text-sm font-semibold text-ink" aria-label={`Trust score ${s.toFixed(1)} out of 5 from ${exp.trust_meta?.count ?? 0} reviews`}>
+        <Star size={15} className="fill-amber-400 text-amber-400" aria-hidden /> {s.toFixed(1)}
+        <span className="font-normal text-ink-3">({exp.trust_meta?.count ?? 0})</span>
       </span>
-      {showSummary && <span className="text-xs text-stone-500">{exp.trust_meta?.summary}</span>}
+      {showSummary && <span className="text-xs text-ink-3">{exp.trust_meta?.summary}</span>}
     </span>
   )
 }
 
-export function AccessIcons({ attrs, full = false, highlight = [] }) {
+export function AccessIcons({ attrs, highlight = [] }) {
   const on = Object.entries(ACCESS).filter(([k]) => attrs?.[k])
-  if (!on.length) return full ? <span className="text-xs text-stone-500">No accessibility features listed</span> : null
+  if (!on.length) return null
   return (
-    <span className={cx('flex flex-wrap gap-1.5', full && 'gap-2')}>
+    <ul className="flex flex-wrap gap-1.5" aria-label="Accessibility features">
       {on.map(([k, { label, Icon }]) => (
-        <span key={k} title={label}
-          className={cx('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs',
-            highlight.includes(k) ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-600')}>
-          <Icon size={13} /> {full && label}
-        </span>
+        <li key={k} title={label}
+          className={cx('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium',
+            highlight.includes(k) ? 'bg-success-soft text-success' : 'bg-surface-2 text-ink-2')}>
+          <Icon size={14} aria-hidden /> {label}
+        </li>
       ))}
-    </span>
+    </ul>
   )
 }
 
 export function IOBadge({ io }) {
-  if (io === 'outdoor') return <Chip tone="amber"><Sun size={12} /> Outdoor</Chip>
-  if (io === 'mixed') return <Chip tone="blue"><Umbrella size={12} /> Indoor + outdoor</Chip>
-  return <Chip tone="blue"><CloudRain size={12} /> Indoor</Chip>
+  if (io === 'outdoor') return <Chip tone="warn"><Sun size={13} aria-hidden /> Outdoor</Chip>
+  if (io === 'mixed') return <Chip tone="accent"><Umbrella size={13} aria-hidden /> Indoor + outdoor</Chip>
+  return <Chip tone="accent"><CloudRain size={13} aria-hidden /> Indoor</Chip>
 }
 
 export function Spinner({ label = 'Loading…' }) {
   return (
-    <div className="flex items-center gap-2 py-10 justify-center text-sm text-stone-500">
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-rani-500 border-t-transparent" /> {label}
+    <div role="status" className="flex items-center justify-center gap-2 py-12 text-sm text-ink-3">
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand border-t-transparent motion-reduce:animate-none" aria-hidden /> {label}
     </div>
   )
 }
 
-export function Segmented({ options, value, onChange }) {
+export function Skeleton({ className }) {
+  return <div className={cx('animate-pulse rounded-2xl bg-surface-2 motion-reduce:animate-none', className)} aria-hidden />
+}
+
+export function Segmented({ options, value, onChange, label }) {
   return (
-    <div className="grid rounded-xl bg-stone-100 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
+    <div role="radiogroup" aria-label={label} className="grid rounded-xl bg-surface-2 p-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
       {options.map((o) => (
-        <button key={o.value} type="button" onClick={() => onChange(o.value)}
-          className={cx('rounded-lg px-2 py-2 text-xs font-semibold transition', value === o.value ? 'bg-white shadow text-stone-900' : 'text-stone-500')}>
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
+          className={cx('min-h-11 rounded-lg px-2 text-sm font-semibold transition-colors', value === o.value ? 'bg-surface text-ink shadow-card' : 'text-ink-3 hover:text-ink')}>
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+export function Field({ label, hint, children }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-ink">{label}</span>
+      {hint && <span className="block text-xs text-ink-3">{hint}</span>}
+      <span className="mt-1.5 block">{children}</span>
+    </label>
+  )
+}
+
+export const inputCls = 'w-full min-h-12 rounded-xl bg-surface px-3.5 text-ink ring-1 ring-line placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-accent'
+
+export function ThemeToggle({ className }) {
+  const [theme, setTheme] = useTheme()
+  const next = { system: 'light', light: 'dark', dark: 'system' }[theme]
+  const Icon = { system: Monitor, light: Sun, dark: Moon }[theme]
+  return (
+    <button type="button" onClick={() => setTheme(next)} aria-label={`Theme: ${theme}. Switch to ${next}`}
+      className={cx('inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl text-ink-2 hover:bg-surface-2 hover:text-ink', className)}>
+      <Icon size={18} aria-hidden /><span className="sr-only lg:not-sr-only lg:text-sm capitalize">{theme} theme</span>
+    </button>
+  )
+}
+
+export function SectionTitle({ children, action }) {
+  return (
+    <div className="mb-3 flex items-end justify-between gap-3">
+      <h2 className="text-lg font-semibold text-ink">{children}</h2>
+      {action}
     </div>
   )
 }

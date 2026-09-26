@@ -1,40 +1,42 @@
 import { Link, useLocation } from 'react-router-dom'
-import { CheckCheck, MapPin, Ticket } from 'lucide-react'
+import { CheckCheck, Clock, MapPin, Ticket } from 'lucide-react'
 import { inr } from '../api'
-import { Button, Card } from '../components/ui'
+import { Card, Chip } from '../components/ui'
 
 const fmt = (iso) => new Date(iso).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
 
 export default function Booking() {
   const booking = useLocation().state?.booking
-  if (!booking) return <div className="p-6 text-sm text-stone-500">No booking to show. <Link className="underline" to="/">Back</Link></div>
+  if (!booking) return <div className="p-6 text-ink-2">No booking to show. <Link className="font-medium text-accent-ink underline" to="/">Back</Link></div>
   return (
-    <div className="px-4 pt-8 text-center">
-      <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-100 text-emerald-600"><CheckCheck size={32} /></div>
-      <h1 className="mt-3 text-2xl font-bold">You’re booked!</h1>
-      <p className="text-sm text-stone-500">Added to your day. Show the reference at the venue.</p>
-      <div className="mt-5 space-y-2 text-left">
+    <div className="px-4 pt-10 md:px-6 lg:max-w-xl lg:px-0">
+      <div className="text-center">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-success-soft text-success" aria-hidden><CheckCheck size={32} /></div>
+        <h1 className="mt-4 text-3xl font-bold">You’re booked</h1>
+        <p className="mt-1 text-ink-2">Added to your day. Show the reference at the venue.</p>
+      </div>
+      <ul className="mt-6 space-y-3">
         {booking.bookings.map((b) => (
-          <Card key={b.item_id} className="p-4">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 rounded-md bg-stone-900 px-2 py-0.5 font-mono text-xs text-white"><Ticket size={12} /> {b.booking_ref}</span>
-              <span className="text-sm text-stone-500">{fmt(b.start_time)} – {fmt(b.end_time)}</span>
+          <Card as="li" key={b.item_id} className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-2.5 py-1 font-mono text-sm text-canvas"><Ticket size={14} aria-hidden /> {b.booking_ref}</span>
+              <span className="inline-flex items-center gap-1 text-sm text-ink-3"><Clock size={14} aria-hidden /> {fmt(b.start_time)} – {fmt(b.end_time)}</span>
             </div>
-            <div className="mt-2 font-semibold">{b.title}</div>
-            <div className="text-xs text-stone-500">{b.vendor}</div>
-            <div className="mt-1 inline-flex items-center gap-1 text-xs text-stone-500"><MapPin size={12} /> {b.location?.name}</div>
-            <div className="mt-2 text-sm">{inr(b.price_per_person)} × {b.people} {b.people > 1 ? 'people' : 'person'}</div>
+            <h2 className="mt-3 text-lg font-semibold">{b.title}</h2>
+            <p className="text-sm text-ink-3">{b.vendor}</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-sm text-ink-3"><MapPin size={14} aria-hidden /> {b.location?.name}</p>
+            <p className="mt-2 text-ink-2">{inr(b.price_per_person)} × {b.people} {b.people > 1 ? 'people' : 'person'}</p>
           </Card>
         ))}
-      </div>
-      <Card className="mt-3 flex items-center justify-between p-4 text-left">
+      </ul>
+      <Card className="mt-3 flex flex-wrap items-center justify-between gap-3 p-5">
         <div>
-          <div className="text-xs text-stone-500">Total due at venue</div>
-          <div className="text-xl font-bold">{inr(booking.total)}</div>
+          <div className="text-sm text-ink-3">Total due at venue</div>
+          <div className="font-display text-2xl font-bold">{inr(booking.total)}</div>
         </div>
-        <span className="rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">Demo · no payment taken</span>
+        <Chip tone="warn">Demo · no payment taken</Chip>
       </Card>
-      <Link to="/"><Button className="mt-5 w-full">Back to Right Now</Button></Link>
+      <Link to="/" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-brand px-4 font-semibold text-on-brand hover:bg-brand-hover">Back to Right Now</Link>
     </div>
   )
 }

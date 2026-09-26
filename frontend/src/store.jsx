@@ -10,6 +10,7 @@ export function TravelerProvider({ children }) {
   const [state, setState] = useState(null)
   const [itinerary, setItinerary] = useState(null)
   const [events, setEvents] = useState([]) // pending disruption cards
+  const [snoozed, setSnoozed] = useState([]) // cards the traveler put aside with "Decide later"
   const [version, setVersion] = useState(0) // bumps whenever recommendations may be stale
   const [toast, setToast] = useState(null)
   const [error, setError] = useState(null)
@@ -45,6 +46,7 @@ export function TravelerProvider({ children }) {
         // fetch fresh alternatives so the card reflects the very latest availability
         const ev = await api.alternatives(m.event.id).catch(() => m.event)
         setEvents((prev) => [ev, ...prev.filter((e) => e.id !== ev.id && e.itinerary_item_id !== ev.itinerary_item_id)])
+        setSnoozed((s) => s.filter((id) => id !== ev.id))
         break
       }
       case 'disruption_resolved':
@@ -72,6 +74,8 @@ export function TravelerProvider({ children }) {
     }
   })
 
-  const value = { state, itinerary, events, setEvents, version, refresh, loadPending, toast, notify, live, error }
+  const snooze = useCallback((id) => setSnoozed((s) => [...new Set([...s, id])]), [])
+  const unsnooze = useCallback(() => setSnoozed([]), [])
+  const value = { state, itinerary, events, setEvents, snoozed, snooze, unsnooze, version, refresh, loadPending, toast, notify, live, error }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

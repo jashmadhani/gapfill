@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CheckCheck, Send } from 'lucide-react'
+import { Accessibility, ArrowLeft, Check, CheckCheck, Clock, MapPin, PartyPopper, Send, Tag, Users, Zap } from 'lucide-react'
 import { api, inr } from '../api'
-import { ACCESS, GROUP_LABEL } from '../components/ui'
+import { ACCESS, GROUP_LABEL, cx } from '../components/ui'
 
 const SAMPLE_ANSWERS = [
   "We're Kesar Blue Pottery and we run a blue pottery painting class for beginners.",
@@ -17,10 +17,11 @@ const time = () => new Date().toLocaleTimeString('en-IN', { hour: 'numeric', min
 function Bubble({ from, children }) {
   const me = from === 'me'
   return (
-    <div className={`flex ${me ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-lg px-3 py-2 text-[14px] leading-snug shadow-sm ${me ? 'rounded-tr-none bg-[#d9fdd3]' : 'rounded-tl-none bg-white'}`}>
+    <div className={cx('flex', me ? 'justify-end' : 'justify-start')}>
+      <div className={cx('max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[15px] leading-snug shadow-card md:max-w-[70%]',
+        me ? 'rounded-tr-md bg-success-soft text-ink' : 'rounded-tl-md bg-surface text-ink')}>
         {children}
-        <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-stone-400">{time()} {me && <CheckCheck size={12} className="text-sky-500" />}</div>
+        <div className="mt-1 flex items-center justify-end gap-1 text-xs text-ink-3">{time()} {me && <CheckCheck size={14} className="text-accent" aria-label="read" />}</div>
       </div>
     </div>
   )
@@ -30,36 +31,39 @@ function DraftCard({ draft, setDraft, onPublish, busy, source }) {
   const a = draft.accessibility_attributes || {}
   const field = (k, label, type = 'text') => (
     <label className="block">
-      <span className="text-[11px] text-stone-500">{label}</span>
-      <input type={type} value={draft[k]} onChange={(e) => setDraft({ ...draft, [k]: type === 'number' ? Number(e.target.value) : e.target.value })}
-        className="w-full rounded border border-stone-200 px-2 py-1 text-sm" />
+      <span className="text-xs font-medium text-ink-3">{label}</span>
+      <input type={type} inputMode={type === 'number' ? 'numeric' : undefined} value={draft[k]}
+        onChange={(e) => setDraft({ ...draft, [k]: type === 'number' ? Number(e.target.value) : e.target.value })}
+        className="mt-0.5 min-h-11 w-full rounded-lg bg-surface px-2.5 ring-1 ring-line focus:outline-none focus:ring-2 focus:ring-accent" />
     </label>
   )
+  const Row = ({ Icon, children }) => <p className="flex items-start gap-2 text-sm text-ink-2"><Icon size={15} className="mt-0.5 shrink-0 text-ink-3" aria-hidden /> <span>{children}</span></p>
   return (
-    <div className="space-y-2">
-      <div className="font-semibold">Here’s your listing draft {source === 'llm' ? '(AI-extracted)' : ''} 👇</div>
-      <div className="space-y-2 rounded-md bg-stone-50 p-2">
+    <div className="space-y-3">
+      <p className="font-semibold">Here’s your listing draft{source === 'llm' ? ' (AI-extracted)' : ''}. Tweak anything, then publish.</p>
+      <div className="space-y-2.5 rounded-xl bg-surface-2 p-3">
         {field('title', 'Title')}
         <div className="grid grid-cols-3 gap-2">
           {field('price', 'Price ₹', 'number')}
           {field('duration_min', 'Minutes', 'number')}
           {field('capacity_left', 'Spots', 'number')}
         </div>
-        <div className="text-xs text-stone-600">
-          📍 {draft.location?.name} · 🕘 {draft.opening_hours?.open}–{draft.opening_hours?.close} · {draft.indoor_outdoor}
-        </div>
-        <div className="text-xs text-stone-600">🏷 {draft.category_tags.join(', ')} · 👥 {draft.group_suitability.map((g) => GROUP_LABEL[g]).join(', ')}</div>
-        <div className="text-xs text-stone-600">♿ {Object.entries(ACCESS).filter(([k]) => a[k]).map(([, v]) => v.label).join(', ') || 'none listed'}</div>
-        {draft.needs_review?.length > 0 && <div className="text-xs text-amber-700">Please double-check: {draft.needs_review.join(', ')} (I guessed)</div>}
+        <Row Icon={MapPin}>{draft.location?.name}</Row>
+        <Row Icon={Clock}>{draft.opening_hours?.open}–{draft.opening_hours?.close} · {draft.indoor_outdoor}</Row>
+        <Row Icon={Tag}>{draft.category_tags.join(', ')}</Row>
+        <Row Icon={Users}>{draft.group_suitability.map((g) => GROUP_LABEL[g]).join(', ')}</Row>
+        <Row Icon={Accessibility}>{Object.entries(ACCESS).filter(([k]) => a[k]).map(([, v]) => v.label).join(', ') || 'None listed'}</Row>
+        {draft.needs_review?.length > 0 && <p className="text-sm font-medium text-warn">Please double-check: {draft.needs_review.join(', ')} (guessed)</p>}
       </div>
-      <button onClick={onPublish} disabled={busy} className="w-full rounded-md bg-[#00a884] py-2 text-sm font-semibold text-white disabled:opacity-50">
-        {busy ? 'Publishing…' : `✅ Looks good — publish at ${inr(draft.price)}`}
+      <button type="button" onClick={onPublish} disabled={busy}
+        className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-success px-4 font-semibold text-on-brand disabled:opacity-50">
+        <Check size={18} aria-hidden /> {busy ? 'Publishing…' : `Looks good, publish at ${inr(draft.price)}`}
       </button>
     </div>
   )
 }
 
-// Guided WhatsApp-style onboarding: 5 questions, extracted draft, one-tap confirm.
+// Guided chat-style onboarding: 5 questions, extracted draft, one-tap confirm.
 export default function VendorChat() {
   const [params] = useSearchParams()
   const vendorId = Number(params.get('vendor')) || null
@@ -75,7 +79,7 @@ export default function VendorChat() {
   const answersRef = useRef([])
 
   useEffect(() => { api.onboardQuestions().then((r) => setQuestions(r.questions)) }, [])
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth' }) }, [answers, draft, published, typing])
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }) }, [answers, draft, published, typing])
 
   const step = answers.length
   const done = questions.length > 0 && step >= questions.length
@@ -108,45 +112,55 @@ export default function VendorChat() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-md flex-col bg-[#efeae2]">
-      <header className="flex items-center gap-3 bg-[#008069] px-3 py-3 text-white">
-        <Link to={vendorId ? `/vendor/${vendorId}` : '/vendor'}><ArrowLeft size={20} /></Link>
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-white/20 text-sm font-bold">GF</div>
-        <div className="flex-1">
-          <div className="font-semibold leading-tight">GapFill for Hosts</div>
-          <div className="text-xs text-emerald-100">{typing ? 'typing…' : 'online'}</div>
+    <div className="flex h-dvh flex-col bg-surface-2">
+      <header className="bg-accent text-on-brand">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-2 py-2">
+          <Link to={vendorId ? `/vendor/${vendorId}` : '/vendor'} aria-label="Back to vendor console" className="grid h-11 w-11 place-items-center rounded-xl hover:bg-white/15"><ArrowLeft size={20} aria-hidden /></Link>
+          <div className="grid h-10 w-10 place-items-center rounded-full bg-white/20 font-display text-sm font-bold" aria-hidden>GF</div>
+          <div className="flex-1">
+            <h1 className="font-display text-lg font-semibold leading-tight">GapFill for Hosts</h1>
+            <p className="text-sm opacity-85" aria-live="polite">{typing ? 'typing…' : 'online'}</p>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 py-4">
-        <div className="mx-auto w-fit rounded-md bg-[#fdf4c5] px-3 py-1 text-center text-[11px] text-stone-600">List your experience in 5 quick questions. No app, no dashboard.</div>
-        {questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
-          <div key={i} className="space-y-2">
-            <Bubble from="bot">{q}</Bubble>
-            {answers[i] && <Bubble from="me">{answers[i]}</Bubble>}
-          </div>
-        ))}
-        {typing && <Bubble from="bot"><span className="tracking-widest text-stone-400">•••</span></Bubble>}
-        {draft && !published && <Bubble from="bot"><DraftCard draft={draft} setDraft={setDraft} onPublish={publish} busy={busy} source={source} /></Bubble>}
-        {published && (
-          <Bubble from="bot">
-            🎉 <b>{published.experience.title}</b> is live! Travelers with a free window near {published.experience.location.name} can now get it as their top pick.
-            <div className="mt-2">
-              Update Open / Closed / Full / spots left any time with one tap from your <Link className="text-[#008069] underline" to={`/vendor/${published.vendor_id}`}>status console</Link>.
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl space-y-2.5 px-3 py-4 md:px-6" role="log" aria-label="Onboarding chat">
+          <p className="mx-auto w-fit rounded-lg bg-warn-soft px-3 py-1.5 text-center text-sm text-warn">List your experience in 5 quick questions. No app, no dashboard.</p>
+          {questions.slice(0, Math.min(step + 1, questions.length)).map((q, i) => (
+            <div key={i} className="space-y-2.5">
+              <Bubble from="bot">{q}</Bubble>
+              {answers[i] && <Bubble from="me">{answers[i]}</Bubble>}
             </div>
-          </Bubble>
-        )}
-        <div ref={end} />
+          ))}
+          {typing && <Bubble from="bot"><span className="tracking-widest text-ink-3" aria-label="typing">•••</span></Bubble>}
+          {draft && !published && <Bubble from="bot"><DraftCard draft={draft} setDraft={setDraft} onPublish={publish} busy={busy} source={source} /></Bubble>}
+          {published && (
+            <Bubble from="bot">
+              <p className="flex items-start gap-2"><PartyPopper size={18} className="mt-0.5 shrink-0 text-brand" aria-hidden />
+                <span><b>{published.experience.title}</b> is live. Travelers with a free window near {published.experience.location.name} can now get it as their top pick.</span></p>
+              <p className="mt-2">Update Open / Closed / Full / spots left any time with one tap from your <Link className="font-medium text-accent-ink underline" to={`/vendor/${published.vendor_id}`}>status console</Link>.</p>
+            </Bubble>
+          )}
+          <div ref={end} />
+        </div>
       </div>
 
       {!done && (
-        <div className="bg-[#f0f2f5] p-2">
-          {step === 0 && <button onClick={fillSample} className="mb-2 w-full rounded-full bg-white py-1.5 text-xs text-[#008069] shadow-sm">⚡ Demo: fill sample answers</button>}
-          <form onSubmit={(e) => { e.preventDefault(); send() }} className="flex gap-2">
-            <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Message"
-              className="flex-1 rounded-full bg-white px-4 py-2.5 text-sm focus:outline-none" />
-            <button className="grid h-10 w-10 place-items-center rounded-full bg-[#00a884] text-white" aria-label="Send"><Send size={18} /></button>
-          </form>
+        <div className="pb-safe border-t border-line bg-surface">
+          <div className="mx-auto max-w-3xl p-2 md:px-6">
+            {step === 0 && (
+              <button type="button" onClick={fillSample} className="mb-2 inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-full bg-accent-soft text-sm font-medium text-accent-ink">
+                <Zap size={15} aria-hidden /> Demo: fill sample answers
+              </button>
+            )}
+            <form onSubmit={(e) => { e.preventDefault(); send() }} className="flex gap-2">
+              <label htmlFor="msg" className="sr-only">Your answer</label>
+              <input id="msg" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type your answer" autoComplete="off"
+                className="min-h-12 flex-1 rounded-full bg-surface-2 px-4 text-ink placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-accent" />
+              <button type="submit" aria-label="Send" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-accent text-on-brand"><Send size={18} aria-hidden /></button>
+            </form>
+          </div>
         </div>
       )}
     </div>
