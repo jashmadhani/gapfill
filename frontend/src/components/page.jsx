@@ -41,8 +41,9 @@ export function PageHero({ img, eyebrow, title, subtitle, children, size = 'md',
 // The rounded content sheet that overlaps the hero on phones; a centred page column on the web.
 export function PageBody({ children, className, width = 'wide' }) {
   return (
-    <div className="relative z-10 -mt-7 rounded-t-[1.9rem] bg-sand-50 lg:mt-0 lg:rounded-none">
-      <div className={cx('mx-auto px-5 pt-6 pb-6 md:px-8 lg:pt-8', width === 'wide' ? 'max-w-6xl' : 'max-w-3xl', className)}>{children}</div>
+    <div className="page-sheet relative z-10 -mt-7 overflow-hidden rounded-t-[1.9rem] lg:mt-0 lg:rounded-none">
+      <div className="page-sheet-glow" aria-hidden />
+      <div className={cx('relative mx-auto px-5 pt-6 pb-6 md:px-8 lg:pt-8', width === 'wide' ? 'max-w-6xl' : 'max-w-3xl', className)}>{children}</div>
     </div>
   )
 }
@@ -51,9 +52,9 @@ export function SectionHead({ title, action, onAction, to }) {
   const nav = useNavigate()
   return (
     <div className="mb-3 flex items-end justify-between gap-3">
-      <h2 className="text-[1.3rem] font-bold text-ink md:text-2xl">{title}</h2>
+      <h2 className="h2-section text-ink">{title}</h2>
       {action && (
-        <button type="button" onClick={onAction || (() => nav(to))} className="min-h-11 text-[15px] font-semibold text-stone-600 hover:text-ink">{action}</button>
+        <button type="button" onClick={onAction || (() => nav(to))} className="btn-label min-h-11 text-stone-600 hover:text-ink">{action}</button>
       )}
     </div>
   )

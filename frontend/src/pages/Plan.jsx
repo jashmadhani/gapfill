@@ -156,7 +156,7 @@ export default function Plan() {
       </section>
       <section className="mt-6 space-y-5 lg:mt-0">
         <div className="flex items-center justify-between pt-1">
-          <h2 className="text-2xl font-bold text-ink">Day by day</h2>
+          <h2 className="h2-section text-ink">Day by day</h2>
           {!draft && <button onClick={() => setHistory((h) => !h)} className="text-xs text-stone-500 underline">{history ? 'Hide' : 'Show'} change history</button>}
         </div>
         <div className="space-y-5">

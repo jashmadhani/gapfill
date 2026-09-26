@@ -33,7 +33,7 @@ function ExpRow({ e, saved, onSave }) {
       <Link to={`/experience/${e.id}`} className="flex min-w-0 flex-1 items-center gap-3.5">
         <Photo src={destImage(e.dest_key)} scrim={false} className="h-[5.2rem] w-[6.2rem] shrink-0 rounded-2xl" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[16px] font-bold text-ink">{e.title}</span>
+          <span className="block truncate h3-title text-ink">{e.title}</span>
           <span className="mt-0.5 block truncate text-sm text-stone-600">{hours(e.duration_min)} · {e.dest_name}</span>
           <span className="mt-1.5 flex items-center justify-between gap-2">
             <span className="text-[16px] font-bold text-ink">{e.price ? inr(e.price) : 'Free'}</span>

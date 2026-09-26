@@ -161,7 +161,13 @@ export default function CoverflowCarousel({
             else if (e.key === 'ArrowRight') { e.preventDefault(); nudge(1) }
           }}
           className="cursor-grab overflow-hidden py-6 outline-none focus-visible:ring-2 focus-visible:ring-rani-500 active:cursor-grabbing"
-          style={{ perspective: `calc(var(--cf-card) * ${perspective})`, touchAction: 'pan-y' }}
+          style={{
+            perspective: `calc(var(--cf-card) * ${perspective})`,
+            touchAction: 'pan-y',
+            // Fade neighbours into the page instead of clipping them at a hard rectangle.
+            WebkitMaskImage: 'linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%)',
+            maskImage: 'linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%)',
+          }}
         >
           <div className="relative select-none" style={{ height: 'var(--cf-card)', transformStyle: 'preserve-3d' }}>
             {slides.map((slide, index) => (

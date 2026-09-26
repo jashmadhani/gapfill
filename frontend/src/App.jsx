@@ -73,15 +73,15 @@ function TravelerShell({ children }) {
       </header>
 
       {error && <div role="alert" className="bg-red-600 px-4 py-2 text-center text-sm font-medium text-white">{error}</div>}
-      <main className="flex-1 pb-28 lg:pb-16">{children}</main>
+      <main className="flex-1 pb-32 lg:pb-16">{children}</main>
 
-      {/* Phone: white tab bar with labels (reference), clear of the home indicator / gesture bar */}
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-        <div className="mx-auto grid max-w-lg grid-cols-5">
+      {/* Phone: floating glass pill, not a flush box — the active tab morphs into a filled capsule. */}
+      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[max(0.9rem,env(safe-area-inset-bottom))] lg:hidden">
+        <div className="tab-glass flex items-center gap-1 rounded-full px-1.5 py-1.5">
           {TABS.map(({ to, label, Icon, end }) => (
             <NavLink key={to} to={to + q} end={end}
-              className={({ isActive }) => cx('flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition', isActive ? 'text-rani-600' : 'text-stone-500 hover:text-ink')}>
-              {({ isActive }) => (<><Icon size={22} strokeWidth={isActive ? 2.4 : 2} className={isActive ? 'fill-rani-100' : ''} aria-hidden />{label}</>)}
+              className={({ isActive }) => cx('flex min-h-12 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold transition-all duration-200', isActive ? 'bg-ink pl-3.5 pr-4 text-white shadow-float' : 'text-stone-500 hover:text-ink')}>
+              {({ isActive }) => (<><Icon size={21} strokeWidth={isActive ? 2.3 : 2} aria-hidden /><span className={isActive ? '' : 'sr-only'}>{label}</span></>)}
             </NavLink>
           ))}
         </div>

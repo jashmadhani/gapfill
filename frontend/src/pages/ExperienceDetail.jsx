@@ -73,7 +73,7 @@ export default function ExperienceDetail() {
                   <Feature Icon={Baby} label={exp.kid_friendly ? 'Kids OK' : '12+'} sub="age" />
                 </div>
                 <section>
-                  <h2 className="text-xl font-bold text-ink">About this experience</h2>
+                  <h2 className="h2-section text-ink">About this experience</h2>
                   <p className="mt-2 text-[16px] leading-relaxed text-stone-700">{exp.description}</p>
                   <p className="mt-2 text-[15px] text-stone-600">Open {exp.open} to {exp.close}{exp.closed_weekdays?.length ? `, closed ${exp.closed_weekdays.map((d) => WEEKDAY[d]).join(', ')}` : ''} · up to {exp.capacity} guests · by {exp.vendor_name}</p>
                   <div className="mt-3 flex flex-wrap gap-2">{exp.tags.map((t) => <span key={t} className={cx('rounded-full px-3 py-1.5 text-sm font-semibold', interests.includes(t) ? 'bg-rani-600 text-white' : 'bg-rani-50 text-rani-700')}>{INTEREST[t]?.label || t}</span>)}</div>
@@ -96,7 +96,7 @@ export default function ExperienceDetail() {
               <section className="space-y-4 rounded-[1.6rem] bg-white p-5 shadow-soft">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h2 className="text-lg font-bold text-ink">How it suits {tour ? 'your group' : 'you'}</h2>
+                    <h2 className="h2-section text-ink">How it suits {tour ? 'your group' : 'you'}</h2>
                     <p className="text-sm text-stone-600">Predicted per person by our model{fit.day ? ` for day ${fit.day}` : ''} · best around {fit.best_start}</p>
                   </div>
                   <FitBadge fit={fit.fit} />

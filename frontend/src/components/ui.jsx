@@ -72,7 +72,7 @@ export function Button({ variant = 'primary', className, ...p }) {
   }
   return (
     <button
-      className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
+      className={cx('btn-label inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2.5 transition active:scale-[.98] disabled:opacity-50 disabled:pointer-events-none', styles[variant], className)}
       {...p}
     />
   )

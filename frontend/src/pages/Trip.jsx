@@ -206,7 +206,7 @@ function Operate({ tour, state, onFix }) {
       <Risks tour={tour} onFix={onFix} />
 
       <section aria-labelledby="today-map">
-        <h2 id="today-map" className="mb-3 text-2xl font-bold text-ink">Today’s route</h2>
+        <h2 id="today-map" className="h2-section mb-3 text-ink">Today’s route</h2>
         <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
           <Suspense fallback={<div className="h-72 animate-pulse bg-stone-200" />}>
             <RouteMap model={model} initialMode={model.today.length ? 'today' : 'route'} selected={sel} onSelect={setSel} className="h-72" />
@@ -333,7 +333,7 @@ function RouteCard({ tour, state }) {
   const stop = sel?.type === 'city' ? model.stops.find((x) => x.key === sel.key) : null
   return (
     <section aria-labelledby="route-h">
-      <h2 id="route-h" className="mb-3 text-2xl font-bold text-ink">Your route</h2>
+      <h2 id="route-h" className="h2-section mb-3 text-ink">Your route</h2>
       <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
         <Suspense fallback={<div className="h-80 animate-pulse bg-stone-200" />}>
           <RouteMap model={model} selected={sel} onSelect={setSel} className="h-80 lg:h-[26rem]" />

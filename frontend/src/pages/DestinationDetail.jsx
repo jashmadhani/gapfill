@@ -85,12 +85,12 @@ export default function DestinationDetail() {
                   <Feature Icon={TrainFront} label={d.rail ? 'Railway' : 'No rail'} sub="by train" />
                 </div>
                 <section>
-                  <h2 className="text-xl font-bold text-ink">About {d.name}</h2>
+                  <h2 className="h2-section text-ink">About {d.name}</h2>
                   <p className="mt-2 text-[16px] leading-relaxed text-stone-700">{d.tagline}. {d.description}</p>
                   <div className="mt-3 flex flex-wrap gap-2">{d.tags.map((t) => <span key={t} className="rounded-full bg-rani-50 px-3 py-1.5 text-sm font-semibold text-rani-700">{INTEREST[t]?.label || t}</span>)}</div>
                 </section>
                 <section>
-                  <div className="flex items-end justify-between"><h2 className="text-xl font-bold text-ink">Top experiences</h2>
+                  <div className="flex items-end justify-between"><h2 className="h2-section text-ink">Top experiences</h2>
                     <button type="button" onClick={() => setTab('experiences')} className="min-h-11 text-[15px] font-semibold text-stone-600">View all</button></div>
                   <ul className="mt-2 space-y-3">{d.experiences.slice(0, 3).map((e) => <ExpItem key={e.id} e={e} />)}</ul>
                 </section>
@@ -102,7 +102,7 @@ export default function DestinationDetail() {
                 {d.hotels.map((h) => (
                   <li key={h.id} className="flex items-center gap-3.5 rounded-[1.4rem] bg-white p-4 shadow-soft">
                     <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ink text-white"><BedDouble size={20} aria-hidden /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[16px] font-bold text-ink">{h.title}</span>
+                    <span className="min-w-0 flex-1"><span className="block truncate h3-title text-ink">{h.title}</span>
                       <span className="block truncate text-sm text-stone-600">{TIER_LABEL[h.tier]} · {h.amenities.slice(0, 3).join(', ')}</span></span>
                     <span className="shrink-0 text-right"><span className="block font-bold text-ink">{inr(h.price)}</span><span className="text-xs text-stone-500">per night</span></span>
                   </li>
@@ -125,7 +125,7 @@ function ExpItem({ e }) {
       <Link to={`/experience/${e.id}`} className="flex items-center gap-3.5 rounded-[1.4rem] bg-white p-2.5 pr-3 shadow-soft">
         <span className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-rani-50 text-rani-600"><Sparkles size={22} aria-hidden /></span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[16px] font-bold text-ink">{e.title}</span>
+          <span className="block truncate h3-title text-ink">{e.title}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-stone-600">{e.duration_min} min · {e.price ? inr(e.price) : 'Free'} <IOBadge io={e.indoor_outdoor} /></span>
         </span>
         <span className="inline-flex items-center gap-1 text-sm font-semibold text-stone-700"><Star size={14} className="fill-amber-400 text-amber-400" aria-hidden />{e.rating.toFixed(1)}</span>
