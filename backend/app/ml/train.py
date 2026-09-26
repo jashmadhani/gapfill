@@ -39,11 +39,11 @@ N_SAT, N_CROWD = 120000, 60000
 
 
 def catalog_places() -> list:
-    from ..catalog import ACTIVITIES, ATTRS
+    from ..catalog import ACTIVITIES, attrs_for
     kl = kaggle_lookup()
     out = []
     for (dest, title, tags, dur, price, op, cl, io, rating, cnt, kids, step, closed, vname, desc) in ACTIVITIES:
-        cat, inten, stairs, walk, seat, shade, min_age, pop, best, kref = ATTRS[title]
+        cat, inten, stairs, walk, seat, shade, min_age, pop, best, kref = attrs_for(title, tags, op, cl)
         if kref and kref in kl:
             pop = kl[kref]["reviews_lakh"]
         out.append({"id": f"c:{title}", "title": title, "category": cat, "intensity": inten, "stairs": stairs, "walk_km": walk,

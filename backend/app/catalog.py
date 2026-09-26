@@ -89,8 +89,6 @@ ACTIVITIES = [
      "Paint a Mewar-school miniature with squirrel-hair brushes and natural pigments."),
     ("udaipur", "Ayurvedic Spa Session", ["relaxation"], 90, 2800, "10:00", "20:00", "indoor", 4.6, 190, False, True, [], "Pichola Wellness",
      "Abhyanga massage and herbal steam overlooking the lake."),
-    ("udaipur", "Vintage Car Museum & Gardens", ["heritage", "photography"], 90, 400, "09:00", "21:00", "mixed", 4.3, 240, True, True, [], "Mewar Explorers",
-     "The Maharana's collection of classic cars, in a garden with shaded benches. Easy walking."),
     # Jaisalmer
     ("jaisalmer", "Golden Fort & Havelis Walk", ["heritage", "photography", "culture"], 180, 900, "08:00", "18:00", "outdoor", 4.7, 510, True, False, [], "Thar Trails",
      "Inside the living fort, then Patwon ki Haveli's carved facades."),
@@ -245,7 +243,7 @@ ATTRS = {
     "National Museum Highlights": ("museum", 1, 0.1, 1.2, 0.6, 1.0, 0, 0.1, "all", None),
     "Dilli Haat Crafts Evening": ("shopping", 1, 0.0, 1.5, 0.5, 0.4, 0, 0.3, "evening", None),
     "Kathputli Puppet Show & Folk Toys": ("performance", 1, 0.1, 0.3, 1.0, 1.0, 0, 0.05, "all", None),
-    "Vintage Car Museum & Gardens": ("museum", 1, 0.1, 0.8, 0.5, 0.8, 0, 0.1, "all", None),
+    "Vintage Car Museum": ("museum", 1, 0.1, 0.8, 0.5, 0.8, 0, 0.1, "all", None),
     "Kids' Nature Trail & Bird Walk": ("wildlife", 2, 0.1, 1.5, 0.3, 0.5, 3, 0.02, "morning", None),
 }
 
@@ -254,3 +252,59 @@ KAGGLE_IMPORT_SKIP = {("Jaipur", "Amber Fort"), ("Jaipur", "City Palace"), ("Jai
                       ("Udaipur", "City Palace"), ("Udaipur", "Lake Pichola"), ("Jaisalmer", "Jaisalmer Fort"), ("Pushkar", "Pushkar Lake"),
                       ("Sawai Madhopur", "Ranthambore National Park"), ("Agra", "Taj Mahal"), ("Agra", "Agra Fort"),
                       ("Delhi", "Chandni Chowk"), ("Delhi", "Humayun's Tomb"), ("Delhi", "Lodhi Garden")}
+
+# Extra demo data (more cities, experiences at real coordinates, travelers, tours) lives in catalog_extra.
+from .catalog_extra import (ACT_COORDS, EXTRA_ACTIVITIES, EXTRA_COORDINATORS, EXTRA_CUSTOMERS,  # noqa: E402
+                            EXTRA_DESTINATIONS, EXTRA_HOTELS)
+
+DESTINATIONS.update(EXTRA_DESTINATIONS)
+ACTIVITIES += EXTRA_ACTIVITIES
+HOTELS.update(EXTRA_HOTELS)
+CUSTOMERS += EXTRA_CUSTOMERS
+COORDINATORS += EXTRA_COORDINATORS
+
+
+# ---------------------------------------------------------------- ML profile for experiences without an expert assessment
+# Map words in the title to the Kaggle place types in ml/priors.TYPE_PRIORS, so every experience gets a physical profile
+# (effort, stairs, walking, seating, shade, minimum age) from the same documented expert assumptions.
+_KEYWORD_TYPE = [
+    ("zipline", "Adventure Sport"), ("kayak", "Adventure Sport"), ("horse", "Adventure Sport"), ("cycling", "Theme Park"),
+    ("dune", "Adventure Sport"), ("climb", "Hill"), ("hike", "Hill"), ("trek", "Trekking"), ("ropeway", "Viewpoint"),
+    ("safari", "National Park"), ("birding", "Bird Sanctuary"), ("birdwatch", "Bird Sanctuary"), ("sanctuary", "Wildlife Sanctuary"),
+    ("safari park", "Zoo"), ("fort", "Fort"), ("ruins", "Site"), ("palace", "Palace"), ("haveli", "Palace"), ("cenotaph", "Monument"),
+    ("chhatri", "Monument"), ("minar", "Monument"), ("mural", "Palace"), ("tomb", "Tomb"), ("stepwell", "Stepwell"), ("baori", "Stepwell"), ("jhalra", "Stepwell"),
+    ("temple", "Temple"), ("mandir", "Temple"), ("aarti", "Temple"), ("dargah", "Religious Site"), ("gurudwara", "Gurudwara"),
+    ("museum", "Museum"), ("gallery", "Museum"), ("observatory", "Observatory"), ("lake", "Lake"), ("garden", "Park"),
+    ("bagh", "Park"), ("park", "Park"), ("market", "Market"), ("bazaar", "Market"), ("gate", "War Memorial"),
+    ("sunset", "Viewpoint"), ("sunrise", "Viewpoint"), ("show", "Cultural"), ("night", "Cultural"), ("music", "Cultural"),
+]
+_TAG_CAT = [("food", "food"), ("workshop", "workshop"), ("shopping", "shopping"), ("wildlife", "wildlife"), ("adventure", "adventure"),
+            ("spiritual", "religious"), ("heritage", "heritage"), ("nightlife", "performance"), ("relaxation", "relaxation"),
+            ("nature", "nature"), ("photography", "viewpoint"), ("culture", "performance")]
+_CAT_PHYS = {  # category: (intensity, stairs, walk km, seating, shade, min age)
+    "food": (2, 0.1, 1.5, 0.5, 0.4, 0), "workshop": (1, 0.0, 0.3, 0.9, 1.0, 5), "shopping": (2, 0.0, 2.0, 0.3, 0.4, 0),
+    "wildlife": (2, 0.1, 1.0, 0.6, 0.3, 0), "adventure": (4, 0.3, 1.5, 0.2, 0.2, 8), "religious": (2, 0.5, 1.0, 0.3, 0.5, 0),
+    "performance": (1, 0.1, 0.3, 0.9, 0.7, 0), "relaxation": (1, 0.0, 0.5, 0.8, 0.6, 0), "viewpoint": (2, 0.4, 1.0, 0.3, 0.2, 0),
+    "nature": (2, 0.2, 2.0, 0.3, 0.4, 0), "heritage": (2, 0.4, 1.5, 0.3, 0.4, 0), "museum": (1, 0.1, 1.0, 0.6, 1.0, 0),
+}
+
+
+def attrs_for(title, tags, open_="09:00", close="18:00"):
+    """Expert profile for an experience: curated (ATTRS) when we have one, otherwise inferred from its name and tags."""
+    if title in ATTRS:
+        return ATTRS[title]
+    from .ml.priors import TYPE_PRIORS
+    low = title.lower()
+    typ = next((t for kw, t in _KEYWORD_TYPE if kw in low), None)
+    if typ:
+        cat, inten, stairs, walk, seat, shade, _, min_age, _ = TYPE_PRIORS[typ]
+    else:
+        cat = next((c for tag, c in _TAG_CAT if tag in tags), "heritage")
+        inten, stairs, walk, seat, shade, min_age = _CAT_PHYS[cat]
+    if any(w in low for w in ("cooking", "tasting", "dinner", "thali", "lassi", "snack")):
+        cat, inten, stairs, walk, seat, shade, min_age = "food", 1, 0.1, 0.5, 0.8, 0.8, 0
+    if any(w in low for w in ("workshop", "studio", "pottery", "weaving", "inlay", "cutting")):
+        cat, inten, stairs, walk, seat, shade, min_age = "workshop", 1, 0.0, 0.4, 0.8, 0.9, 5
+    oh, ch = int(open_[:2]), int(close[:2])
+    best = "morning" if ch <= 12 else "evening" if oh >= 16 else "all"
+    return (cat, inten, stairs, walk, seat, shade, min_age, 0.05, best, None)

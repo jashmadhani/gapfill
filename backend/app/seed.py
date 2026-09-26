@@ -5,8 +5,8 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import select
 
 from . import planner as P
-from .catalog import (ACTIVITIES, ATTRS, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, KAGGLE_IMPORT_SKIP, REVIEW_SNIPPETS,
-                      TIER_AMENITIES, TRANSPORT)
+from .catalog import (ACT_COORDS, ACTIVITIES, COORDINATORS, CUSTOMERS, DESTINATIONS, HOTELS, KAGGLE_IMPORT_SKIP, REVIEW_SNIPPETS,
+                      TIER_AMENITIES, TRANSPORT, attrs_for)
 from .ml.data import CITY_DEST, kaggle_lookup, kaggle_rows
 from .ml.priors import CAT_HOURS, CAT_TAGS, DEFAULT_TYPE, TYPE_PRIORS
 from .db import Base, SessionLocal, engine
@@ -43,6 +43,11 @@ TOURS = [
 ]
 
 
+from .catalog_extra import EXTRA_TOURS  # noqa: E402
+
+TOURS += EXTRA_TOURS
+
+
 def _jitter(i: int):
     return ((i * 37) % 11 - 5) * 0.006, ((i * 53) % 13 - 6) * 0.006
 
@@ -72,12 +77,13 @@ async def reset_and_seed(today: date | None = None) -> dict:
         for idx, (dest, title, tags, dur, price, op, cl, io, rating, cnt, kids, step, closed, vname, desc) in enumerate(ACTIVITIES):
             v = await vendor(vname, "activity", dest)
             dlat, dlng = _jitter(idx)
-            cat, inten, stairs, walk, seat, shade, min_age, pop, best, kref = ATTRS[title]
+            lat, lng = ACT_COORDS.get(title, (DESTINATIONS[dest][4] + dlat, DESTINATIONS[dest][5] + dlng))
+            cat, inten, stairs, walk, seat, shade, min_age, pop, best, kref = attrs_for(title, tags, op, cl)
             if kref and kref in kl:
                 pop = kl[kref]["reviews_lakh"]
             o = Offering(vendor_id=v.id, kind="activity", dest_key=dest, title=title, description=desc, tags=tags, duration_min=dur,
                          price=price, open=op, close=cl, indoor_outdoor=io, rating=rating, rating_count=cnt, kid_friendly=kids,
-                         step_free=step, closed_weekdays=closed, lat=DESTINATIONS[dest][4] + dlat, lng=DESTINATIONS[dest][5] + dlng,
+                         step_free=step, closed_weekdays=closed, lat=lat, lng=lng,
                          capacity=12 + idx % 10, category=cat, intensity=inten, stairs=stairs, walk_km=walk, seating=seat, shade=shade,
                          min_age=min_age, popularity=pop, best_time=best, source="curated")
             db.add(o)
@@ -91,6 +97,9 @@ async def reset_and_seed(today: date | None = None) -> dict:
         for idx, r in enumerate(kaggle_rows()):
             dest = CITY_DEST.get(r["city"])
             if not dest or (r["city"], r["name"]) in KAGGLE_IMPORT_SKIP:
+                continue
+            key = " ".join(r["name"].lower().replace("'", "").split()[:2])
+            if any(key in a[1].lower().replace("'", "") for a in ACTIVITIES if a[0] == dest):
                 continue
             cat, inten, stairs, walk, seat, shade, indoor, min_age, kids = TYPE_PRIORS.get(r["type"], DEFAULT_TYPE)
             v = await vendor("Self-guided entry (site office)", "activity", dest)
@@ -135,6 +144,7 @@ async def reset_and_seed(today: date | None = None) -> dict:
             start = today + timedelta(days=offset)
             res = P.plan({**prefs, "days": days}, start)
             cust = customers[ci]
+            prefs = {**prefs, "members": P.default_members(prefs)}
             ages = [m["age"] for m in prefs["members"]]
             adults, kids = sum(1 for a in ages if a >= 12), sum(1 for a in ages if a < 12)
             tour = Tour(code=f"TC-{2600 + n + 1}", title=title, customer_id=cust.id, start_date=start, days=days, prefs={**prefs, "days": days},

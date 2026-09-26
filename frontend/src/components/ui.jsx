@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Check, Coffee, Accessibility, Baby, BedDouble, Bike, Binoculars, Camera, Car, CloudRain, Compass, Flame, Landmark, Leaf, Moon, Palette,
@@ -157,20 +157,78 @@ export function Bar({ value, max, tone = 'rani', className }) {
   return <div className={cx('h-2 overflow-hidden rounded-full bg-stone-100', className)}><div className={cx('h-full rounded-full', tones[tone])} style={{ width: `${pct}%` }} /></div>
 }
 
-// Discover → … → Review; tapping a reached stage jumps to the screen that covers it.
-const STAGE_LINK = { discover: '/', personalize: '/personalize', plan: '/plan', price: '/price', book: '/price', prepare: '/trip', operate: '/trip', assist: '/assist', adapt: '/trip', complete: '/trip', review: '/review' }
-export function JourneyStrip({ stage }) {
+// One line instead of an 11-chip strip: where you are, a thin progress bar, and the single next action.
+const NEXT_STEP = {
+  plan: ['Planning', 'Review & book', '/price'],
+  prepare: ['Booked · getting ready', 'Get ready', '/trip'],
+  operate: ['On tour', 'Today’s plan', '/trip'],
+  complete: ['Tour complete', 'Rate your tour', '/review'],
+  review: ['Reviewed', 'Plan your next trip', '/personalize'],
+  cancelled: ['Cancelled', 'Plan a new tour', '/personalize'],
+}
+export function JourneyStrip({ stage, day, days, hideAction = false }) {
   const at = STAGE_INDEX[stage] ?? 1
+  const [label, action, to] = NEXT_STEP[stage] || ['Discover', 'Design your tour', '/personalize']
+  const pct = Math.round(((at + 1) / JOURNEY.length) * 100)
   return (
-    <nav aria-label="Tour stages" className="no-scrollbar flex gap-1.5 overflow-x-auto px-4 pb-1 md:px-6">
-      {JOURNEY.map(([k, label], i) => (
-        <Link key={k} to={STAGE_LINK[k]} aria-current={i === at ? 'step' : undefined}
-          className={cx('inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-3 text-xs font-semibold transition',
-            i < at ? 'bg-white text-stone-600 ring-1 ring-stone-200' : i === at ? 'bg-rani-600 text-white' : 'text-stone-400')}>
-          {i < at && <Check size={12} aria-hidden />}{label}
-        </Link>
-      ))}
-    </nav>
+    <div className="flex items-center gap-3 px-4 md:px-6">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2 text-sm">
+          <span className="truncate font-semibold text-stone-900">{label}{day ? ` · day ${day} of ${days}` : ''}</span>
+          <span className="shrink-0 text-xs text-stone-500">step {Math.min(at + 1, JOURNEY.length)} of {JOURNEY.length}</span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-stone-200" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Tour progress">
+          <div className="h-full rounded-full bg-rani-600" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      {!hideAction && <Link to={to} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-rani-600 px-4 text-sm font-semibold text-white">{action}</Link>}
+    </div>
+  )
+}
+
+// Show the most useful interests first; the rest sit behind "More" so the row stays short.
+export const TOP_INTERESTS = ['heritage', 'food', 'culture', 'adventure', 'nature', 'relaxation']
+export function InterestPicker({ value, onToggle, size = 'md' }) {
+  const [more, setMore] = useState(false)
+  const keys = more ? Object.keys(INTEREST) : [...new Set([...TOP_INTERESTS, ...value.filter((k) => !TOP_INTERESTS.includes(k))])]
+  return (
+    <div className="flex flex-wrap gap-2">
+      {keys.map((k) => {
+        const { label, Icon } = INTEREST[k]
+        const on = value.includes(k)
+        return (
+          <button type="button" key={k} onClick={() => onToggle(k)} aria-pressed={on}
+            className={cx('inline-flex items-center gap-1.5 rounded-full px-3.5 font-medium transition', size === 'sm' ? 'min-h-10 text-sm' : 'min-h-11 text-sm',
+              on ? 'bg-rani-600 text-white' : 'bg-white text-stone-600 ring-1 ring-stone-200 hover:text-stone-900')}>
+            <Icon size={15} aria-hidden /> {label}
+          </button>
+        )
+      })}
+      <button type="button" onClick={() => setMore((m) => !m)} aria-expanded={more}
+        className="inline-flex min-h-10 items-center rounded-full px-3 text-sm font-semibold text-rani-600 hover:underline">
+        {more ? 'Less' : `+${Object.keys(INTEREST).length - keys.length} more`}
+      </button>
+    </div>
+  )
+}
+
+// Bottom sheet on phones, centered dialog on tablets+. Escape / backdrop closes.
+export function Sheet({ open, onClose, title, children }) {
+  useEffect(() => {
+    if (!open) return
+    const k = (e) => e.key === 'Escape' && onClose()
+    document.addEventListener('keydown', k)
+    return () => document.removeEventListener('keydown', k)
+  }, [open, onClose])
+  if (!open) return null
+  return (
+    <div className="animate-fade fixed inset-0 z-50 flex items-end justify-center bg-stone-900/45 backdrop-blur-sm md:items-center md:p-6" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div role="dialog" aria-modal="true" aria-label={title} className="animate-slide-up max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-[2rem] bg-sand-50 p-5 pb-[max(24px,env(safe-area-inset-bottom))] shadow-2xl md:rounded-[2rem]">
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-stone-300 md:hidden" aria-hidden />
+        <h2 className="text-xl font-bold">{title}</h2>
+        <div className="mt-4">{children}</div>
+      </div>
+    </div>
   )
 }
 

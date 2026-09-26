@@ -13,7 +13,8 @@ KAGGLE_PATH = os.path.join(os.path.dirname(__file__), "data", "kaggle_top_indian
 WEEKDAYS = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
 # Kaggle city -> TourCraft destination key
 CITY_DEST = {"Delhi": "delhi", "Agra": "agra", "Jaipur": "jaipur", "Udaipur": "udaipur", "Jodhpur": "jodhpur",
-             "Jaisalmer": "jaisalmer", "Pushkar": "pushkar", "Sawai Madhopur": "ranthambore"}
+             "Jaisalmer": "jaisalmer", "Pushkar": "pushkar", "Sawai Madhopur": "ranthambore", "Bikaner": "bikaner",
+             "Chittorgarh": "chittorgarh", "Mount Abu": "mount_abu", "Bundi": "bundi"}
 
 
 def _f(v, default=0.0):

@@ -1,7 +1,7 @@
 {
  "version": 1,
- "trained_at": "2026-09-26T12:48:00+00:00",
- "seconds": 56.1,
+ "trained_at": "2026-09-26T13:30:58+00:00",
+ "seconds": 65.3,
  "features": [
   "age",
   "needs_step_free",
@@ -50,108 +50,108 @@
  "satisfaction": {
   "rows_synthetic": 120000,
   "rows_feedback": 0,
-  "places": 371,
-  "test_places": 75,
-  "mae": 0.32,
-  "r2": 0.76,
-  "baseline_mean_mae": 0.649,
-  "baseline_rating_only_mae": 0.608,
+  "places": 472,
+  "test_places": 95,
+  "mae": 0.321,
+  "r2": 0.781,
+  "baseline_mean_mae": 0.677,
+  "baseline_rating_only_mae": 0.634,
   "importance": [
    {
     "feature": "Age",
-    "value": 0.2192
+    "value": 0.2026
    },
    {
     "feature": "Place rating",
-    "value": 0.075
+    "value": 0.0899
    },
    {
     "feature": "Kind of place",
-    "value": 0.0669
+    "value": 0.0882
    },
    {
     "feature": "Rain",
-    "value": 0.0647
-   },
-   {
-    "feature": "Interest match",
-    "value": 0.0596
-   },
-   {
-    "feature": "Mood",
-    "value": 0.0573
-   },
-   {
-    "feature": "Physical effort",
-    "value": 0.0509
+    "value": 0.0746
    },
    {
     "feature": "Duration",
-    "value": 0.0413
+    "value": 0.0611
    },
    {
-    "feature": "Finish time",
-    "value": 0.0299
+    "feature": "Interest match",
+    "value": 0.0602
    },
    {
-    "feature": "Stairs",
-    "value": 0.0255
+    "feature": "Mood",
+    "value": 0.0504
    },
    {
     "feature": "Below minimum age",
-    "value": 0.0232
+    "value": 0.0411
+   },
+   {
+    "feature": "Physical effort",
+    "value": 0.0359
+   },
+   {
+    "feature": "Finish time",
+    "value": 0.0346
+   },
+   {
+    "feature": "Stairs",
+    "value": 0.0246
    },
    {
     "feature": "Crowds",
-    "value": 0.0231
+    "value": 0.0212
    },
    {
     "feature": "Heat exposure",
-    "value": 0.0155
-   },
-   {
-    "feature": "Indoor / outdoor",
-    "value": 0.0017
+    "value": 0.0138
    },
    {
     "feature": "Step-free need",
-    "value": 0.0016
-   },
-   {
-    "feature": "Price",
-    "value": 0.0016
-   },
-   {
-    "feature": "Time of day",
-    "value": 0.0013
-   },
-   {
-    "feature": "Walking",
-    "value": 0.001
+    "value": 0.0041
    },
    {
     "feature": "Seating",
-    "value": 0.0009
+    "value": 0.0033
    },
    {
-    "feature": "Minimum age",
-    "value": 0.0008
+    "feature": "Price",
+    "value": 0.0024
+   },
+   {
+    "feature": "Walking",
+    "value": 0.0016
    },
    {
     "feature": "Popularity",
-    "value": 0.0007
+    "value": 0.0016
+   },
+   {
+    "feature": "Kid friendly",
+    "value": 0.0015
+   },
+   {
+    "feature": "Minimum age",
+    "value": 0.0011
    },
    {
     "feature": "Shade",
+    "value": 0.0008
+   },
+   {
+    "feature": "Indoor / outdoor",
+    "value": 0.0006
+   },
+   {
+    "feature": "Time of day",
     "value": 0.0006
    },
    {
     "feature": "Season heat",
-    "value": 0.0003
-   },
-   {
-    "feature": "Kid friendly",
-    "value": 0.0002
+    "value": 0.0
    }
   ],
   "tests": [
@@ -254,111 +254,111 @@
    ],
    "fit": [
     [
-     27,
-     50,
-     44,
-     64,
-     62,
-     24,
-     49,
-     48,
-     65,
-     52,
-     50,
-     48
-    ],
-    [
-     62,
-     64,
-     55,
-     73,
-     78,
-     60,
-     65,
-     61,
-     72,
-     71,
+     31,
+     51,
+     45,
+     67,
      66,
-     64
+     32,
+     51,
+     49,
+     66,
+     59,
+     44,
+     51
     ],
     [
      61,
+     65,
+     55,
+     75,
+     77,
+     71,
+     64,
+     61,
+     74,
+     71,
      56,
+     66
+    ],
+    [
+     59,
+     57,
      54,
      66,
      67,
-     79,
-     65,
+     82,
+     64,
      68,
      66,
      61,
-     61,
-     68
+     55,
+     71
     ],
     [
-     68,
-     63,
-     60,
+     66,
+     62,
+     59,
      70,
-     72,
-     81,
-     75,
+     71,
+     79,
+     73,
+     68,
      69,
+     66,
+     64,
+     74
+    ],
+    [
+     69,
+     68,
+     60,
+     69,
+     69,
+     61,
      71,
      67,
-     68,
-     75
-    ],
-    [
-     70,
      67,
-     61,
-     69,
-     70,
-     60,
-     72,
-     67,
-     69,
      68,
      69,
      68
     ],
     [
-     53,
-     68,
-     65,
+     61,
      70,
-     68,
-     20,
-     68,
-     64,
-     68,
+     66,
      69,
+     68,
+     11,
+     69,
+     67,
      70,
-     65
+     70,
+     79,
+     64
     ],
     [
-     22,
-     56,
-     55,
-     61,
+     27,
      57,
-     7,
-     56,
-     49,
-     56,
-     60,
+     57,
      62,
-     51
+     57,
+     4,
+     56,
+     48,
+     58,
+     63,
+     74,
+     52
     ]
    ]
   }
  },
  "crowd": {
   "rows": 60000,
-  "mae": 5.45,
-  "r2": 0.88,
-  "baseline_mean_mae": 15.84
+  "mae": 5.16,
+  "r2": 0.883,
+  "baseline_mean_mae": 14.78
  },
  "mood": {
   "rows": 6000,
@@ -513,7 +513,7 @@
  },
  "data": {
   "kaggle_places": 325,
-  "catalogue_places": 46,
+  "catalogue_places": 147,
   "synthetic_satisfaction_rows": 120000,
   "synthetic_crowd_rows": 60000,
   "mood_sentences": 6000,
@@ -522,8 +522,8 @@
  "history": [
   {
    "version": 1,
-   "at": "2026-09-26T12:48:00+00:00",
-   "mae": 0.32,
+   "at": "2026-09-26T13:30:58+00:00",
+   "mae": 0.321,
    "feedback_rows": 0
   }
  ]

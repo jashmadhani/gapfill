@@ -45,12 +45,12 @@ function TravelerShell({ children }) {
       <main className="flex-1 pb-32">{children}</main>
       {/* Floating frosted tab bar; sits above the iOS home indicator / Android gesture bar. */}
       <nav aria-label="Main" className="pointer-events-none fixed inset-x-0 bottom-0 z-30 px-4 pb-[max(12px,env(safe-area-inset-bottom))]">
-        <div className="glass pointer-events-auto mx-auto grid max-w-md grid-cols-4 rounded-full p-1.5 shadow-float ring-1 ring-white/60">
+        <div className="pointer-events-auto mx-auto flex max-w-md gap-1 rounded-full bg-ink p-2 shadow-float">
           {TABS.map(({ to, label, Icon, end }) => (
-            <NavLink key={to} to={to + (embed ? '?embed=1' : '')} end={end}
-              className={({ isActive }) => cx('flex min-h-12 items-center justify-center gap-1.5 rounded-full text-xs font-semibold transition',
-                isActive ? 'bg-rani-600 text-white shadow-[0_6px_16px_rgb(31_79_143_/_0.35)]' : 'text-stone-500 hover:text-stone-900')}>
-              {({ isActive }) => (<><Icon size={19} aria-hidden /><span className={cx(isActive ? 'inline' : 'sr-only sm:not-sr-only')}>{label}</span></>)}
+            <NavLink key={to} to={to + (embed ? '?embed=1' : '')} end={end} aria-label={label}
+              className={({ isActive }) => cx('flex min-h-12 min-w-12 items-center justify-center gap-1.5 rounded-full text-sm font-semibold transition', isActive ? 'flex-[1.8] px-4' : 'flex-1',
+                isActive ? 'bg-white text-ink' : 'text-white/70 hover:text-white')}>
+              {({ isActive }) => (<><Icon size={21} strokeWidth={2.2} aria-hidden />{isActive && <span>{label}</span>}</>)}
             </NavLink>
           ))}
         </div>

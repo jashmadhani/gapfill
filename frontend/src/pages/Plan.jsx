@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronDown, CircleAlert, Lightbulb, Plus, RefreshCw, TriangleAlert, Wallet, Wand2 } from 'lucide-react'
+import { BedDouble, CalendarDays, ChevronDown, CircleAlert, Gauge, Lightbulb, Plus, RefreshCw, TriangleAlert, Users, Wallet, Wand2 } from 'lucide-react'
 import { api, fmtDate, inr } from '../api'
 import { useTour } from '../store'
 import DayTimeline, { useTagAction } from '../components/DayTimeline'
 import Considered from '../components/Considered'
 import { GroupFairness } from '../components/group'
-import { Bar, Button, Card, Empty, JourneyStrip, MODE, PACE_LABEL, Spinner, TIER_LABEL, cx } from '../components/ui'
+import { Bar, Button, Card, Empty, JourneyStrip, PACE_LABEL, Photo, Spinner, TIER_LABEL, cx } from '../components/ui'
+import { destImage } from '../media'
+import { buildTripMap } from '../lib/tripMap'
+
+const RouteMap = lazy(() => import('../components/RouteMap'))
 
 function AddPicker({ tour, d, onDone }) {
   const [list, setList] = useState(null)
@@ -17,7 +21,7 @@ function AddPicker({ tour, d, onDone }) {
     const inPlan = new Set(tour.days_detail.flatMap((x) => x.items.filter((i) => !['replaced', 'cancelled'].includes(i.status)).map((i) => i.offering_id)))
     setList(dest.experiences.filter((e) => !inPlan.has(e.id)))
   }
-  if (!list) return <button onClick={load} className="ml-7 inline-flex items-center gap-1 text-xs font-semibold text-rani-600"><Plus size={13} /> Add an experience on day {d.day}</button>
+  if (!list) return <button type="button" onClick={load} className="ml-8 inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white px-4 text-sm font-bold text-rani-600 shadow-soft"><Plus size={16} aria-hidden /> Add to day {d.day}</button>
   const add = async (e) => {
     setBusy(e.id)
     try {
@@ -45,9 +49,10 @@ function AddPicker({ tour, d, onDone }) {
 
 // Plan: optimised itinerary, live price vs budget, conflicts, and per-component customisation.
 export default function Plan() {
-  const { tour, state, refresh, notify } = useTour()
+  const { tour, state, refresh, notify, events } = useTour()
   const nav = useNavigate()
   const [busy, setBusy] = useState(false)
+  const [sel, setSel] = useState(null)
   const [showNotes, setShowNotes] = useState(true)
   const [history, setHistory] = useState(false)
   const [tagBusy, onTag] = useTagAction(tour, refresh, notify)
@@ -58,6 +63,8 @@ export default function Plan() {
   const editable = ['plan', 'prepare', 'operate'].includes(tour.stage)
   const p = tour.pricing
   const errors = tour.conflicts.filter((c) => c.level === 'error')
+  const cities = Object.fromEntries((state.destinations || []).map((d) => [d.key, d]))
+  const model = buildTripMap({ tour, state, cities, events })
 
   const run = async (fn, msg) => {
     setBusy(true)
@@ -70,25 +77,35 @@ export default function Plan() {
 
   return (
     <div>
-      <header className="px-4 pt-5 pb-3">
-        <div className="text-xs font-medium uppercase tracking-wider text-stone-500">{tour.code} · {draft ? 'Draft plan' : 'Booked'}</div>
-        <h1 className="font-display text-3xl leading-tight">{tour.title}</h1>
-        <p className="text-sm text-stone-500">
-          {fmtDate(tour.start_date)} – {fmtDate(tour.end_date)} · {tour.days} days · {tour.members?.length || tour.travelers} travelers
-          {tour.members?.length > 0 && <> ({tour.members.map((m) => `${m.name} ${m.age}`).join(', ')})</>}
-        </p>
-        <p className="mt-0.5 text-xs text-stone-500">{TIER_LABEL[tour.prefs.hotel_tier]} stays · {MODE[tour.prefs.transport]?.label} · {PACE_LABEL[tour.prefs.pace]} pace</p>
+      <header className="pt-safe px-5 pt-6 pb-4 md:px-6">
+        <p className="text-sm font-bold uppercase tracking-[0.16em] text-rani-600">{draft ? 'Draft plan' : 'Booked'} · {tour.code}</p>
+        <h1 className="mt-1 text-[2.25rem] font-extrabold leading-[1.05] text-ink">{tour.title}</h1>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {[[CalendarDays, `${fmtDate(tour.start_date)} – ${fmtDate(tour.end_date)}`], [Users, `${tour.group.adults + (tour.group.children || 0)} travelers`],
+            [BedDouble, `${TIER_LABEL[tour.prefs.hotel_tier]} stays`], [Gauge, `${PACE_LABEL[tour.prefs.pace]} pace`]].map(([Icon, t]) => (
+            <span key={t} className="inline-flex min-h-10 items-center gap-1.5 rounded-full bg-white px-3.5 text-sm font-semibold text-ink shadow-soft"><Icon size={16} aria-hidden /> {t}</span>
+          ))}
+        </div>
       </header>
       <JourneyStrip stage={tour.stage} />
 
-      <section className="space-y-3 px-4 pt-4">
-        <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]">
-          {tour.route.map((r, idx) => (
-            <div key={r.dest} className="shrink-0 rounded-lg bg-white px-2.5 py-1.5 text-xs leading-tight ring-1 ring-stone-200">
-              <div className="font-semibold">{idx + 1}. {r.name}</div>
-              <div className="text-stone-500">{r.nights} night{r.nights > 1 ? 's' : ''} · from {fmtDate(r.from_date)}</div>
-            </div>
-          ))}
+      <section className="space-y-5 px-5 pt-5 md:px-6">
+        {/* Route as a story: map + stop cards */}
+        <div className="overflow-hidden rounded-[2rem] bg-white shadow-soft">
+          <Suspense fallback={<div className="h-64 animate-pulse bg-stone-200" />}>
+            <RouteMap model={model} selected={sel} onSelect={setSel} className="h-64" />
+          </Suspense>
+          <ol className="no-scrollbar flex gap-2 overflow-x-auto p-3">
+            {tour.route.map((r, idx) => (
+              <li key={r.dest} className="shrink-0">
+                <button type="button" onClick={() => setSel({ type: 'city', key: r.dest })} aria-pressed={sel?.key === r.dest}
+                  className={cx('flex items-center gap-3 rounded-3xl p-1.5 pr-4 text-left transition', sel?.key === r.dest ? 'bg-ink text-white' : 'bg-stone-50 text-ink')}>
+                  <Photo src={destImage(r.dest)} scrim={false} className="h-12 w-12 rounded-2xl" />
+                  <span><span className="block font-bold">{idx + 1}. {r.name}</span><span className={cx('block text-sm', sel?.key === r.dest ? 'text-white/75' : 'text-stone-600')}>{r.nights} night{r.nights > 1 ? 's' : ''} · {fmtDate(r.from_date)}</span></span>
+                </button>
+              </li>
+            ))}
+          </ol>
         </div>
 
         <Card className="p-3">
@@ -150,7 +167,7 @@ export default function Plan() {
         <div className="pt-4"><Considered tour={tour} editable={editable} onChanged={refresh} /></div>
       </section>
 
-      <div className="sticky bottom-24 z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-4 pb-3 pt-4">
+      <div className="sticky bottom-16 z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-4 pb-3 pt-4">
         {draft ? (
           <Button className="w-full" disabled={busy} onClick={() => nav('/price')}>
             {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? 's' : ''} to book` : `Review price & book · ${inr(p.total)}`}

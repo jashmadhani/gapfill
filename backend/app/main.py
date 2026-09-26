@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from . import roads as R
 from . import assist, customize
 from . import planner as P
 from .adapt import resolve_event, run_trigger
@@ -232,7 +233,7 @@ async def state(db: AsyncSession = Depends(get_db)):
     tour = await db.get(Tour, st.active_tour_id) if st.active_tour_id else None
     return {"demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time, "active_tour_id": st.active_tour_id,
             "active_day": current_day(tour, st) if tour else None, "rain": st.rain,
-            "destinations": [{"key": k, "name": d["name"], "airport": d["airport"], "rail": d["rail"]} for k, d in P.W["dests"].items()],
+            "destinations": [{"key": k, "name": d["name"], "airport": d["airport"], "rail": d["rail"], "lat": d["lat"], "lng": d["lng"]} for k, d in P.W["dests"].items()],
             "interests": INTERESTS, "tiers": TIERS, "paces": list(PACES), "transport_modes": ["best", "car", "train", "flight"],
             "db": backend_name(), "assistant": llm_mode()}
 
@@ -281,6 +282,18 @@ async def discover(interests: str = "", db: AsyncSession = Depends(get_db)):
                                                   "vetoed": [f"{v['name']} ({v['age']})" for v in ev["vetoed"]]})
     return {"interests": ints, "destinations": P.recommend_destinations(ints), "experiences": out,
             "group": [{"name": m["name"], "age": m["age"]} for m in ctx["members"]]}
+
+
+@app.get("/roads")
+async def roads(pts: str):
+    """Real road geometry for a path. pts = "lng,lat;lng,lat;..." (max 12 points)."""
+    try:
+        points = [[float(x) for x in p.split(",")] for p in pts.split(";") if p]
+    except ValueError:
+        raise HTTPException(400, "pts must be lng,lat;lng,lat;...")
+    if not 2 <= len(points) <= 12:
+        raise HTTPException(400, "Between 2 and 12 points")
+    return {"legs": await R.legs(points)}
 
 
 @app.get("/destinations/{key}")
