@@ -1,70 +1,121 @@
-"""End-to-end smoke test of the core loop. Run: python -m tests.smoke_test"""
-import faulthandler
+"""End-to-end smoke test of the full lifecycle. Run from backend/: python -m tests.smoke_test"""
+import asyncio
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.seed import reset_and_seed
+
+
+def ok(r):
+    assert r.status_code < 400, (r.status_code, r.text)
+    return r.json()
 
 
 def main():
-    faulthandler.dump_traceback_later(60, exit=True)
+    asyncio.run(reset_and_seed())
     with TestClient(app) as c:
-        c.post("/demo/reset").raise_for_status()
-        st = c.get("/state").json()
-        itin = c.get(f"/itinerary/{st['active_itinerary_id']}").json()
-        print("items:", [(i["type"], i["start_label"], i["end_label"], i["title"]) for i in itin["items"]])
-        gap = itin["next_gap_id"]
-        rec = c.get(f"/recommendations?slot_id={gap}").json()
-        print("slot:", rec["slot"]["start"], "-", rec["slot"]["end"], "excluded:", rec["excluded"])
-        print("primary:", rec["primary"]["experience"]["title"], "|", rec["primary"]["fit"]["reasoning"])
-        print("backups:", [b["experience"]["title"] for b in rec["backups"]])
-        print("bundle:", rec["bundle"] and [e["title"] for e in rec["bundle"]["experiences"]], rec["bundle"] and rec["bundle"]["total_price"])
+        st = ok(c.get("/state"))
+        tid = st["active_tour_id"]
+        assert tid and st["active_day"] == 2, st
 
+        # Discover
+        d = ok(c.get("/discover?interests=food,heritage"))
+        assert d["destinations"] and d["experiences"]
+        ok(c.get(f"/destinations/{d['destinations'][0]['key']}"))
+        ok(c.get(f"/offerings/{d['experiences'][0]['id']}"))
+
+        # Personalize -> Plan -> Price
+        t = ok(c.post("/tours/plan", json={"name": "Test Traveler", "days": 7, "destinations": ["jaipur", "udaipur", "jaisalmer"],
+                                            "adults": 2, "children": 1, "budget": 150000, "hotel_tier": "premium",
+                                            "interests": ["food", "adventure", "culture"], "pace": "packed"}))
+        new_id = t["id"]
+        acts = sum(1 for dd in t["days_detail"] for i in dd["items"] if i["kind"] == "activity")
+        assert acts >= 5, acts
+        print("planned:", t["title"], "·", t["pricing"]["total"], "notes:", t["notes"][:3])
+        assert t["pricing"]["within_budget"] or t["notes"], t["pricing"]
+
+        # Customise: alternatives + swap + add + remove + optimise
+        act = next(i for dd in t["days_detail"] for i in dd["items"] if i["kind"] == "activity")
+        alts = ok(c.get(f"/tours/{new_id}/items/{act['id']}/alternatives"))
+        if alts["alternatives"]:
+            ok(c.post(f"/tours/{new_id}/items/{act['id']}/swap", json={"offering_id": alts["alternatives"][0]["offering"]["id"]}))
+        hotel = next(i for dd in t["days_detail"] for i in dd["items"] if i["kind"] == "hotel")
+        halts = ok(c.get(f"/tours/{new_id}/items/{hotel['id']}/alternatives"))
+        ok(c.post(f"/tours/{new_id}/items/{hotel['id']}/swap", json={"offering_id": halts["alternatives"][0]["offering"]["id"]}))
+        tr = next(i for dd in t["days_detail"] for i in dd["items"] if i["kind"] == "transport")
+        ok(c.get(f"/tours/{new_id}/items/{tr['id']}/alternatives"))
+        ok(c.post(f"/tours/{new_id}/optimise"))
+
+        # Book
+        full = ok(c.get(f"/tours/{new_id}"))
+        if any(x["level"] == "error" for x in full["conflicts"]):
+            print("conflicts:", full["conflicts"])
+        b = ok(c.post(f"/tours/{new_id}/book", json={"pay": "deposit"}))
+        assert b["refs"] and b["tour"]["status"] == "booked"
+        ok(c.post(f"/tours/{tid}/activate"))
+
+        # Adapt: every trigger on the active (in-progress) tour
+        tour = ok(c.get(f"/tours/{tid}"))
+        today = next(dd for dd in tour["days_detail"] if dd["day"] == 2)
+        r = ok(c.post("/changes/trigger", json={"trigger_type": "weather", "dest": today["dest"], "date": today["date"]}))
+        print("weather:", r["note"], [(e["label"], [o["label"] for o in e["options"]]) for e in r["events"]])
+        for e in r["events"]:
+            if e["tour_id"] == tid:
+                rec = next(o for o in e["options"] if o["recommended"])
+                ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": rec["key"]}))
+
+        for body in ({"trigger_type": "transport_delay", "minutes": 150}, {"trigger_type": "transport_cancel"},
+                     {"trigger_type": "hotel_issue"}, {"trigger_type": "running_late", "minutes": 60},
+                     {"trigger_type": "budget_change", "new_budget": 140000}):
+            r = ok(c.post("/changes/trigger", json=body))
+            print(body["trigger_type"], "→", r["note"], [(o["label"], o["cost_delta"], o.get("recommended")) for e in r["events"] for o in e["options"]])
+            for e in r["events"]:
+                ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "accept", "option": e["options"][0]["key"], "by": "operator"}))
+
+        # Vendor side: close a vendor with an upcoming booking, confirm/decline requests
+        tour = ok(c.get(f"/tours/{tid}"))
+        future_act = next(i for dd in tour["days_detail"] for i in dd["items"] if i["kind"] == "activity" and not i["is_past"] and i["status"] == "booked")
+        v = ok(c.get(f"/vendors/{future_act['vendor_id']}"))
+        if v["requests"]:
+            ok(c.post(f"/vendors/{v['id']}/bookings/{v['requests'][0]['id']}", json={"action": "confirm"}))
+        r = ok(c.patch(f"/vendors/{future_act['vendor_id']}/status", json={"status": "closed"}))
+        print("vendor closed → events:", r)
+        pend = ok(c.get(f"/changes?tour_id={tid}&status=pending"))
+        for e in pend:
+            ok(c.post(f"/changes/{e['id']}/resolve", json={"action": "dismiss"}))
+        ok(c.patch(f"/vendors/{future_act['vendor_id']}/status", json={"status": "open"}))
+
+        # Assist
+        for q in ["what's next today?", "add a cooking class tomorrow", "how much have I paid?", "make day 5 lighter",
+                  "cheaper hotel in Udaipur", "call my coordinator", "skip the food trail", "I'm running 30 min late"]:
+            r = ok(c.post(f"/tours/{tid}/chat", json={"text": q}))
+            print(f"  > {q}\n    {r['reply'][:140]}")
+
+        # Operator
+        dash = ok(c.get("/operator/dashboard"))
+        print("kpis:", dash["kpis"])
+        ok(c.get("/operator/schedule"))
+        ok(c.get("/operator/people"))
+        ok(c.get("/operator/payments"))
+        ts = ok(c.get("/operator/tasks"))
+        if ts:
+            ok(c.post(f"/operator/tasks/{ts[0]['id']}/done"))
+        ok(c.post(f"/tours/{tid}/payments", json={"amount": 5000}))
+        ok(c.patch(f"/tours/{tid}", json={"coordinator_id": 2}))
+        ok(c.get("/vendors"))
+
+        # Complete -> Review
+        done = next(t for t in ok(c.get("/tours")) if t["stage"] == "complete")
+        full = ok(c.get(f"/tours/{done['id']}"))
+        acts = [i for dd in full["days_detail"] for i in dd["items"] if i["kind"] == "activity" and i["status"] == "booked"]
+        ok(c.post(f"/tours/{done['id']}/review", json={"overall": 5, "text": "Great", "items": [{"item_id": a["id"], "rating": 5} for a in acts]}))
+
+        # clock
+        ok(c.post("/demo/clock", json={"day": 3, "time": "09:00"}))
         with c.websocket_connect("/ws") as ws:
             assert ws.receive_json()["type"] == "hello"
-            for trig in [{"trigger_type": "weather", "weather_bad": True},
-                         {"trigger_type": "time_shrink", "minutes": 45},
-                         {"trigger_type": "budget_shrink", "new_budget": 500},
-                         {"trigger_type": "unavailable", "vendor_id": 1}]:
-                c.post("/demo/reset").raise_for_status()
-                ws.receive_json()  # demo_reset
-                r = c.post("/disruption/trigger", json=trig).json()
-                ev = r["events"][0]
-                pushed = []
-                while not pushed or pushed[-1]["type"] != "itinerary_updated":
-                    pushed.append(ws.receive_json())
-                assert any(m["type"] == "disruption" for m in pushed), pushed
-                alt = c.get(f"/disruption/{ev['id']}/alternatives").json()
-                print(f"\n[{trig['trigger_type']}] {ev['reason']}")
-                print("   primary:", alt["primary"]["experience"]["title"], "| backup:", alt["backup"] and alt["backup"]["experience"]["title"])
-                res = c.post(f"/disruption/{ev['id']}/resolve", json={"action": "accept"}).json()
-                print("   accepted ->", res)
-                ws.receive_json(); ws.receive_json()
-                itin = c.get(f"/itinerary/{st['active_itinerary_id']}").json()
-                print("   timeline:", [(i["start_label"], i["title"], i["status"]) for i in itin["items"] if i["type"] != "booked"])
-
-        c.post("/demo/reset")
-        # add to gap + booking
-        rec = c.get(f"/recommendations?slot_id={gap}").json()
-        r = c.post(f"/itinerary/{st['active_itinerary_id']}/items", json={"slot_id": gap, "experience_ids": [rec["primary"]["experience"]["id"]]}).json()
-        b = c.post("/booking/confirm", json={"itinerary_item_ids": r["created_item_ids"]}).json()
-        print("\nbooking:", b["bookings"][0]["booking_ref"], b["total"])
-        # intent
-        print("intent:", c.post("/session/intent", json={"text": "something indoors and foodie under 400, quick"}).json())
-        print("recs after intent:", c.get(f"/recommendations?slot_id={c.get('/itinerary/1').json()['next_gap_id']}").json()["primary"])
-        c.post("/session/intent", json={"text": ""})
-        # vendor onboarding
-        answers = ["We're Kesar Pottery and we run a blue pottery painting class for beginners.",
-                   "Near Hawa Mahal, in our family studio.",
-                   "About 1.5 hours, ₹650 per person, up to 8 guests.",
-                   "10am to 6pm, indoors.",
-                   "Great for families, couples and solo travelers. Ground floor with seating and a washroom, it's quiet."]
-        d = c.post("/vendor/onboard", json={"answers": answers}).json()
-        print("\ndraft:", d)
-        pub = c.post("/vendor/listings", json={"draft": d["draft"]}).json()
-        print("published:", pub["experience"]["id"], pub["vendor_id"])
-        print("vendor status:", c.patch("/vendor/2/status", json={"status": "slots", "slots_left": 1}).json()["status"])
-        print("demand:", c.get("/vendor/1/demand-signals").json())
+    print("SMOKE TEST PASSED")
 
 
 if __name__ == "__main__":

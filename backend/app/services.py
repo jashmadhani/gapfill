@@ -1,315 +1,340 @@
-"""Stateful services: recommendations for a slot, the disruption/replan engine, demand signals, serialization."""
-import random
-import string
+"""Persistence + domain services: tour loading/serialisation, lifecycle stage, booking, payments, tasks,
+cancellation policy, proactive risks and the pre-trip checklist."""
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .engine import (HEADCOUNT, SlotContext, at, build_slot_context, compose_bundle, evaluate, fmt_clock, hhmm_to_min, is_available,
-                     item_location, load_world, occupying, recompute_gaps, serialize_candidate, serialize_ctx,
-                     serialize_exp, time_fit, to_min)
-from .models import AppState, DemandSignal, DisruptionEvent, Experience, ItineraryItem
+from . import planner as P
+from .models import AppState, ChangeEvent, Coordinator, Customer, Payment, Task, Tour, TourItem
 
-TRIGGER_LABELS = {
-    "unavailable": "Vendor unavailable", "weather": "Weather turned bad",
-    "time_shrink": "Running late", "budget_shrink": "Budget tightened",
-}
+DEPOSIT = 0.30
+STAGES = ["discover", "personalize", "plan", "price", "book", "prepare", "operate", "assist", "adapt", "complete", "review"]
 
 
 async def get_state(db: AsyncSession) -> AppState:
     st = await db.get(AppState, 1)
     if not st:
-        st = AppState(id=1)
+        st = AppState(id=1, demo_date=date.today(), demo_time="11:30", rain=[])
         db.add(st)
         await db.flush()
     return st
 
 
-def booking_ref() -> str:
-    return "GF-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+def now_dt(st: AppState) -> datetime:
+    return datetime.combine(st.demo_date, datetime.min.time()) + timedelta(minutes=P.hm(st.demo_time))
 
 
-async def bump_demand(db: AsyncSession, key: str, tag: str, n: int = 1) -> None:
-    today = date.today()
-    row = (await db.execute(select(DemandSignal).where(
-        DemandSignal.vendor_id_or_area == key, DemandSignal.query_tag == tag, DemandSignal.date == today))).scalar_one_or_none()
-    if row:
-        row.count += n
-    else:
-        db.add(DemandSignal(vendor_id_or_area=key, query_tag=tag, count=n, date=today))
+def item_dict(r: TourItem) -> dict:
+    return {c.name: getattr(r, c.name) for c in TourItem.__table__.columns} | {"meta": dict(r.meta or {})}
 
 
-# ---------------------------------------------------------------- recommendations
-async def recommend_for_gap(db: AsyncSession, gap: ItineraryItem) -> dict:
-    st = await get_state(db)
-    itin, user, sess, items, exps, vendors = await load_world(db, gap.itinerary_id)
-    ctx = build_slot_context(itin=itin, user=user, sess=sess, items=items, exp_by_id=exps, weather_bad=st.weather_bad,
-                             slot_start=gap.start_time, slot_end=gap.end_time)
-    cands, excluded = evaluate(exps, vendors, ctx)
-    bundle = compose_bundle(cands, ctx)
-    primary = serialize_candidate(cands[0], ctx, vendors) if cands else None
-    backups = [serialize_candidate(c, ctx, vendors) for c in cands[1:3]]
-    if bundle:
-        by_id = {c["exp"].id: c["exp"] for c in cands}
-        bundle["experiences"] = [serialize_exp(by_id[i], vendors[by_id[i].vendor_id]) for i in bundle["experience_ids"]]
-        for leg in bundle["legs"]:
-            leg["start_label"], leg["end_label"] = fmt_clock(leg["start"]), fmt_clock(leg["end"])
-        bundle["back_by_label"] = fmt_clock(bundle["back_by"])
-    # demand signals: what travelers near this slot are looking for, and vendor impressions
-    area = f"area:{ctx.origin.get('key')}"
-    for tag in ctx.intent_tags:
-        await bump_demand(db, area, tag)
-    if cands:
-        await bump_demand(db, f"vendor:{cands[0]['exp'].vendor_id}", "shown")
-    await db.commit()
-    return {"slot_id": gap.id, "slot": serialize_ctx(ctx), "primary": primary, "backups": backups, "bundle": bundle,
-            "excluded": excluded, "candidate_count": len(cands), "weather_bad": st.weather_bad}
+async def load_items(db, tour_id) -> list[TourItem]:
+    return list((await db.execute(select(TourItem).where(TourItem.tour_id == tour_id).order_by(TourItem.day, TourItem.start_min, TourItem.id))).scalars())
 
 
-# ---------------------------------------------------------------- disruption / replan engine
-def slot_for_item(item: ItineraryItem, items: list) -> tuple[datetime, datetime]:
-    if item.slot_start and item.slot_end:
-        return item.slot_start, item.slot_end
-    occ = [i for i in occupying(items) if i.id != item.id]
-    prev = [i for i in occ if i.end_time <= item.start_time]
-    nxt = [i for i in occ if i.start_time >= item.end_time]
-    return (prev[-1].end_time if prev else item.start_time), (nxt[0].start_time if nxt else item.end_time)
+def ctx_for(tour: Tour, st: AppState) -> dict:
+    return P.make_ctx(tour.prefs or {}, tour.start_date, tour.days, tour.route or [], st.rain or [])
 
 
-async def _solve(db: AsyncSession, event: DisruptionEvent, item: ItineraryItem):
-    """Re-run the recommendation pipeline against the original slot's (now changed) constraints."""
-    st = await get_state(db)
-    itin, user, sess, items, exps, vendors = await load_world(db, item.itinerary_id)
-    c = event.context
-    ctx = build_slot_context(itin=itin, user=user, sess=sess, items=items, exp_by_id=exps,
-                             weather_bad=st.weather_bad or c.get("indoor_only", False),
-                             slot_start=datetime.fromisoformat(c["slot_start"]), slot_end=datetime.fromisoformat(c["slot_end"]),
-                             replacing_item_id=item.id)
-    ctx.exclude_ids |= set(c.get("exclude_ids", []))
-    cands, excluded = evaluate(exps, vendors, ctx)
-    return ctx, cands, excluded, vendors
+def end_date(tour: Tour) -> date:
+    return tour.start_date + timedelta(days=tour.days - 1)
 
 
-async def solve_alternatives(db: AsyncSession, event: DisruptionEvent) -> dict:
-    item = await db.get(ItineraryItem, event.itinerary_item_id)
-    ctx, cands, excluded, vendors = await _solve(db, event, item)
-    alts = [serialize_candidate(c, ctx, vendors) for c in cands[:2]]  # exactly 1 primary + 1 backup
-    if event.resolution_status == "pending":
-        event.alternatives = alts
-    return {"primary": alts[0] if alts else None, "backup": alts[1] if len(alts) > 1 else None,
-            "slot": serialize_ctx(ctx), "excluded": excluded}
+def current_day(tour: Tour, st: AppState) -> int | None:
+    d = (st.demo_date - tour.start_date).days + 1
+    return d if 1 <= d <= tour.days else None
 
 
-async def create_disruption(db: AsyncSession, item: ItineraryItem, trigger: str, reason: str, *,
-                            late_minutes: int = 0, indoor_only: bool = False) -> DisruptionEvent:
-    # one live card per item: supersede any older pending event
-    for old in (await db.execute(select(DisruptionEvent).where(
-            DisruptionEvent.itinerary_item_id == item.id, DisruptionEvent.resolution_status == "pending"))).scalars():
-        old.resolution_status = "dismissed"
-    items = (await db.execute(select(ItineraryItem).where(ItineraryItem.itinerary_id == item.itinerary_id))).scalars().all()
-    s, e = slot_for_item(item, list(items))
-    s = s + timedelta(minutes=late_minutes)
-    ev = DisruptionEvent(itinerary_item_id=item.id, trigger_type=trigger, created_at=datetime.now(),
-                         resolution_status="pending", reason=reason,
-                         context={"slot_start": s.isoformat(), "slot_end": e.isoformat(),
-                                  "exclude_ids": [item.experience_id] if item.experience_id else [],
-                                  "indoor_only": indoor_only, "late_minutes": late_minutes})
-    db.add(ev)
-    item.status = "disrupted"
+def stage(tour: Tour, st: AppState) -> str:
+    if tour.status == "reviewed":
+        return "review"
+    if tour.status == "cancelled":
+        return "cancelled"
+    if tour.status == "draft":
+        return "plan"
+    if st.demo_date < tour.start_date:
+        return "prepare"
+    if st.demo_date <= end_date(tour):
+        return "operate"
+    return "complete"
+
+
+def item_start_dt(tour: Tour, i) -> datetime:
+    day = i["day"] if isinstance(i, dict) else i.day
+    mins = i["start_min"] if isinstance(i, dict) else i.start_min
+    return datetime.combine(tour.start_date + timedelta(days=day - 1), datetime.min.time()) + timedelta(minutes=mins)
+
+
+def is_past(tour: Tour, i: dict, st: AppState) -> bool:
+    end = item_start_dt(tour, i) + timedelta(minutes=(i["end_min"] - i["start_min"]) if i["kind"] != "hotel" else 0)
+    if i["kind"] == "hotel":
+        end = item_start_dt(tour, i) + timedelta(days=i["nights"])
+    return end <= now_dt(st)
+
+
+def booking_ref(tour: Tour, row: TourItem) -> str:
+    prefix = {"hotel": "H", "transport": "T", "activity": "A"}.get(row.kind, "X")
+    return f"{prefix}{tour.id:02d}-{row.id:04d}"
+
+
+# ---------------------------------------------------------------- cancellation policy
+def policy_text(i: dict) -> str:
+    if i["kind"] == "activity":
+        return "Free cancellation up to 24h before; 50% charged after."
+    if i["kind"] == "hotel":
+        return "Free cancellation up to 72h before check-in; one night charged after."
+    mode = (i.get("meta") or {}).get("mode")
+    if mode == "flight":
+        return "Airline change fee ₹3,000 per traveler."
+    if mode == "train":
+        return "10% clerkage; 25% within 24h of departure."
+    return "Free up to 24h before pickup; 25% after."
+
+
+def cancel_fee(tour: Tour, i: dict, st: AppState, cause: str) -> float:
+    """What the traveler pays when a booked component is cancelled. Only traveler-caused changes are charged —
+    vendor failures, weather and transport disruptions are waived under the operator's disruption cover."""
+    if cause != "traveler" or i.get("status") not in ("booked", "disrupted"):
+        return 0
+    hours = (item_start_dt(tour, i) - now_dt(st)).total_seconds() / 3600
+    mode = (i.get("meta") or {}).get("mode")
+    if i["kind"] == "activity":
+        return 0 if hours > 24 else round(i["price"] * 0.5)
+    if i["kind"] == "hotel":
+        return 0 if hours > 72 else round(i["unit_price"] * i["qty"])
+    if mode == "flight":
+        return 3000 * i["qty"]
+    if mode == "train":
+        return round(i["price"] * (0.25 if hours < 24 else 0.10))
+    return 0 if hours > 24 else round(i["price"] * 0.25)
+
+
+# ---------------------------------------------------------------- tasks + payments
+async def add_task(db, kind, text, tour_id=None, vendor_id=None, coordinator_id=None):
+    t = Task(kind=kind, text=text, tour_id=tour_id, vendor_id=vendor_id, coordinator_id=coordinator_id)
+    db.add(t)
+    return t
+
+
+async def payments_summary(db, tour: Tour, total: float) -> dict:
+    ps = list((await db.execute(select(Payment).where(Payment.tour_id == tour.id).order_by(Payment.created_at))).scalars())
+    paid = sum(p.amount for p in ps if p.kind == "payment")
+    refunded = sum(p.amount for p in ps if p.kind == "refund")
+    net = paid - refunded
+    return {"paid": paid, "refunded": refunded, "net_paid": net, "balance": round(total - net),
+            "deposit": round(total * DEPOSIT), "status": "paid" if net >= total - 1 else "deposit" if net > 0 else "unpaid",
+            "ledger": [{"id": p.id, "amount": p.amount, "kind": p.kind, "method": p.method, "note": p.note,
+                        "at": p.created_at.isoformat()} for p in ps]}
+
+
+# ---------------------------------------------------------------- item mutations (used by customise + adapt)
+async def new_row(db, tour: Tour, d: dict, booked: bool) -> TourItem:
+    row = TourItem(tour_id=tour.id, **{k: d[k] for k in ("day", "kind", "offering_id", "vendor_id", "title", "dest_key",
+                                                            "from_key", "start_min", "end_min", "nights", "qty", "unit_price", "price")},
+                   meta=d.get("meta") or {}, status="booked" if booked else "planned")
+    db.add(row)
     await db.flush()
-    await solve_alternatives(db, ev)
-    await db.flush()
-    return ev
+    if booked:
+        row.booking_ref = booking_ref(tour, row)
+        row.vendor_status = "pending"
+        await add_task(db, "confirm", f"Confirm {row.booking_ref}: {row.title} · day {row.day} {P.label(row.start_min)} · {row.qty} pax",
+                       tour.id, row.vendor_id, tour.coordinator_id)
+    return row
 
 
-async def active_experience_items(db: AsyncSession, itinerary_id: int) -> list[ItineraryItem]:
-    st = await get_state(db)
-    now_min = hhmm_to_min(st.demo_now)
-    items = (await db.execute(select(ItineraryItem).where(ItineraryItem.itinerary_id == itinerary_id))).scalars().all()
-    return [i for i in occupying(list(items)) if i.experience_id and i.status == "confirmed" and to_min(i.end_time) > now_min]
+async def retire_row(db, tour: Tour, row: TourItem, st: AppState, cause: str, status="replaced", note="") -> float:
+    d = item_dict(row)
+    fee = cancel_fee(tour, d, st, cause)
+    was_booked = row.status in ("booked", "disrupted") or row.booking_ref
+    row.status = status
+    row.meta = {**(row.meta or {}), "retired_note": note, "fee": fee}
+    if fee:
+        db.add(TourItem(tour_id=tour.id, day=row.day, kind="fee", title=f"Cancellation fee · {row.title}", dest_key=row.dest_key,
+                        start_min=row.start_min, end_min=row.start_min, price=fee, unit_price=fee, qty=1, status="booked",
+                        meta={"for": row.id}))
+    if was_booked and row.booking_ref:
+        await add_task(db, "cancel", f"Cancel {row.booking_ref}: {row.title}{' — ' + note if note else ''}", tour.id, row.vendor_id, tour.coordinator_id)
+    return fee
 
 
-async def scan_unavailable(db: AsyncSession, itinerary_id: int) -> list[DisruptionEvent]:
-    _, user, _, _, exps, vendors = await load_world(db, itinerary_id)
-    events = []
-    for item in await active_experience_items(db, itinerary_id):
-        exp = exps[item.experience_id]
-        v = vendors[exp.vendor_id]
-        if not is_available(exp, v, user.group_type):
-            when = fmt_clock(to_min(item.start_time))
-            if v.status in ("closed", "full"):
-                why = f"{v.name} {'has closed for today' if v.status == 'closed' else 'is fully booked'}, so “{exp.title}” at {when} can't happen."
-            elif exp.capacity_left > 0:
-                why = f"“{exp.title}” at {when} is down to {exp.capacity_left} spot(s) — not enough for your group."
-            else:
-                why = f"“{exp.title}” at {when} just sold out."
-            events.append(await create_disruption(db, item, "unavailable", f"{why} Here's a swap that fits the same window."))
-    return events
+async def retime_row(db, tour: Tour, row: TourItem, day: int, st_min: int, en_min: int, note=""):
+    moved = row.day != day or row.start_min != st_min
+    row.day, row.start_min, row.end_min = day, st_min, en_min
+    if moved and row.booking_ref:
+        row.vendor_status = "pending"
+        await add_task(db, "notify", f"Reschedule {row.booking_ref}: {row.title} → day {day} {P.label(st_min)}{' — ' + note if note else ''}",
+                       tour.id, row.vendor_id, tour.coordinator_id)
 
 
-async def scan_weather(db: AsyncSession, itinerary_id: int) -> list[DisruptionEvent]:
-    _, _, _, _, exps, _ = await load_world(db, itinerary_id)
-    events = []
-    for item in await active_experience_items(db, itinerary_id):
-        exp = exps[item.experience_id]
-        if exp.indoor_outdoor == "outdoor":
-            events.append(await create_disruption(
-                db, item, "weather",
-                f"Heavy rain is forecast during “{exp.title}” (outdoors). Here's an indoor option for the same window.",
-                indoor_only=True))
-    return events
+# ---------------------------------------------------------------- risks + checklist
+def risks(tour: Tour, items: list, ctx: dict, st: AppState) -> list:
+    out = []
+    lv = [i for i in items if P.live(i) and not is_past(tour, i, st)]
+    horizon = now_dt(st) + timedelta(hours=48)
+    for i in lv:
+        o = P.off(i["offering_id"]) if i.get("offering_id") else None
+        when = item_start_dt(tour, i)
+        if i["kind"] == "activity" and o and o["indoor_outdoor"] == "outdoor" and P.rain_on(ctx, i["dest_key"], i["day"]):
+            out.append({"level": "high", "item_id": i["id"], "kind": "weather", "text": f"Rain forecast for {i['title']} (day {i['day']}). Tap to see indoor options."})
+        if o and not o["available"] and i["kind"] != "fee":
+            out.append({"level": "high", "item_id": i["id"], "kind": "unavailable", "text": f"{i['title']} is no longer available."})
+        if i.get("vendor_status") == "pending" and when <= horizon and tour.status == "booked":
+            out.append({"level": "medium", "item_id": i["id"], "kind": "unconfirmed", "text": f"{i['title']} not yet confirmed by the vendor ({P.label(i['start_min'])}, day {i['day']})."})
+        if i.get("vendor_status") == "declined":
+            out.append({"level": "high", "item_id": i["id"], "kind": "declined", "text": f"Vendor declined {i['title']}."})
+    for d in range(1, tour.days + 1):
+        day = sorted([i for i in lv if i["day"] == d and i["kind"] in ("activity", "transport")], key=lambda i: i["start_min"])
+        for a, b in zip(day, day[1:]):
+            gap = b["start_min"] - a["end_min"]
+            if a["kind"] == "transport" and b["kind"] == "activity" and 0 <= gap < 60:
+                out.append({"level": "medium", "item_id": b["id"], "kind": "connection",
+                            "text": f"Tight connection on day {d}: {gap} min from arrival to {b['title']}. A {60 - gap}+ min delay would miss it."})
+        long_leg = next((i for i in day if i["kind"] == "transport" and i["end_min"] - i["start_min"] > 6 * 60), None)
+        if long_leg and any(i["kind"] == "activity" and i["start_min"] >= 19 * 60 for i in day):
+            out.append({"level": "low", "item_id": long_leg["id"], "kind": "fatigue", "text": f"Day {d} has a {P.dur_label(long_leg['end_min'] - long_leg['start_min'])} transfer and a late activity — consider a lighter evening."})
+    return out
 
 
-async def trigger_running_late(db: AsyncSession, itinerary_id: int, minutes: int, item_id: int | None) -> dict:
-    items = await active_experience_items(db, itinerary_id)
-    item = next((i for i in items if i.id == item_id), None) if item_id else (items[0] if items else None)
-    if not item:
-        return {"events": [], "note": "No upcoming experience to shift."}
-    _, _, _, all_items, exps, _ = await load_world(db, itinerary_id)
-    exp = exps[item.experience_id]
-    s, e = slot_for_item(item, all_items)
-    # does the same experience still fit once the window starts later?
-    probe = SlotContext(trip_date=s.date(), start=to_min(s) + minutes, end=to_min(e),
-                        origin=_prev_loc(item, all_items, exps), dest=_next_loc(item, all_items, exps),
-                        budget_left=10**9, group_type="solo", access_flags=[])
-    fit = time_fit(exp, probe)
-    if fit:
-        item.start_time = at(s.date(), fit["start"])
-        item.end_time = at(s.date(), fit["end"])
-        item.slot_start = s + timedelta(minutes=minutes)
-        item.slot_end = e
-        await recompute_gaps(db, itinerary_id)
-        return {"events": [], "note": f"Still fits — “{exp.title}” shifted to {fmt_clock(fit['start'])}."}
-    ev = await create_disruption(
-        db, item, "time_shrink",
-        f"You're running {minutes} min late, so “{exp.title}” ({exp.duration_min} min) no longer fits before "
-        f"{fmt_clock(to_min(e))}. Here's something shorter for the time you have left.",
-        late_minutes=minutes)
-    return {"events": [ev], "note": None}
+def packing_for(tour: Tour) -> list:
+    tags = set()
+    for s in tour.route or []:
+        tags.update(P.W["dests"].get(s["dest"], {}).get("tags", []))
+    tips = ["Photo ID for every traveler (hotels and monuments check it)"]
+    if "adventure" in tags or "nature" in tags:
+        tips.append("Scarf, sunglasses and sunscreen for the desert / safaris")
+    if "wildlife" in tags:
+        tips.append("Neutral-coloured clothes and a warm layer for early safaris")
+    if "spiritual" in tags or "heritage" in tags:
+        tips.append("Shoulders-and-knees covered outfit for temples; easy slip-on shoes")
+    tips.append("Comfortable walking shoes — forts are steep")
+    return tips
 
 
-def _prev_loc(item, items, exps):
-    prev = [i for i in occupying(items) if i.id != item.id and i.end_time <= item.start_time]
-    return item_location(prev[-1], exps) if prev else item_location(item, exps)
+def checklist(tour: Tour, pay: dict) -> list:
+    done = tour.checklist or {}
+    items = [
+        ("ids", "Upload ID proofs for all travelers", done.get("ids", False)),
+        ("vouchers", "Download vouchers & booking references", done.get("vouchers", False)),
+        ("balance", "Pay the balance", pay["balance"] <= 0),
+        ("coordinator", "Save your tour coordinator's number", done.get("coordinator", False)),
+        ("insurance", "Travel insurance (optional)", done.get("insurance", False)),
+        ("packing", "Packing: " + "; ".join(packing_for(tour)), done.get("packing", False)),
+    ]
+    return [{"key": k, "label": l, "done": bool(v), "auto": k == "balance"} for k, l, v in items]
 
 
-def _next_loc(item, items, exps):
-    nxt = [i for i in occupying(items) if i.id != item.id and i.start_time >= item.end_time]
-    return item_location(nxt[0], exps) if nxt else item_location(item, exps)
+# ---------------------------------------------------------------- serialisation
+def ser_offering(o: dict, brief=False) -> dict:
+    if not o:
+        return None
+    d = {"id": o["id"], "kind": o["kind"], "title": o["title"], "dest_key": o["dest_key"],
+         "dest_name": P.W["dests"].get(o["dest_key"], {}).get("name") if o["dest_key"] else None,
+         "price": o["price"], "rating": o["rating"], "rating_count": o["rating_count"], "tags": o["tags"],
+         "duration_min": o["duration_min"], "indoor_outdoor": o["indoor_outdoor"], "tier": o["tier"], "mode": o["mode"],
+         "vendor_id": o["vendor_id"], "vendor_name": o["vendor_name"], "available": o["available"], "status": o["status"],
+         "kid_friendly": o["kid_friendly"], "step_free": o["step_free"], "open": o["open"], "close": o["close"]}
+    if not brief:
+        d |= {"description": o["description"], "amenities": o["amenities"], "closed_weekdays": o["closed_weekdays"], "capacity": o["capacity"]}
+    return d
 
 
-async def trigger_budget(db: AsyncSession, itinerary_id: int, new_budget: float) -> list[DisruptionEvent]:
-    _, _, sess, items, exps, _ = await load_world(db, itinerary_id)
-    old = sess.budget_envelope
-    sess.budget_envelope = new_budget
-    await db.flush()
-    upcoming = await active_experience_items(db, itinerary_id)
-    price = lambda i: i.price_paid if i.price_paid is not None else exps[i.experience_id].price  # noqa: E731
-    spent = sum(price(i) for i in occupying(items) if i.experience_id)
-    if spent <= new_budget or not upcoming:
-        return []
-    item = max(upcoming, key=price)
-    exp = exps[item.experience_id]
-    return [await create_disruption(
-        db, item, "budget_shrink",
-        f"Your budget dropped from ₹{old:,.0f} to ₹{new_budget:,.0f}. “{exp.title}” (₹{price(item):,.0f}) now puts you over, "
-        f"so here's a cheaper option for the same window.")]
+def ser_item(tour: Tour, i: dict, st: AppState) -> dict:
+    o = P.off(i["offering_id"]) if i.get("offering_id") else None
+    d = {k: i[k] for k in ("id", "day", "kind", "offering_id", "vendor_id", "title", "dest_key", "from_key", "start_min",
+                           "end_min", "nights", "qty", "unit_price", "price", "status", "booking_ref", "vendor_status", "rating")}
+    d |= {"meta": i["meta"], "start_label": P.label(i["start_min"]), "end_label": P.label(i["end_min"]),
+          "date": (tour.start_date + timedelta(days=i["day"] - 1)).isoformat(), "is_past": is_past(tour, i, st),
+          "dest_name": P.W["dests"].get(i["dest_key"], {}).get("name") if i.get("dest_key") else None,
+          "from_name": P.W["dests"].get(i["from_key"], {}).get("name") if i.get("from_key") else None,
+          "offering": ser_offering(o, brief=True), "vendor_name": (P.W["vendors"].get(i["vendor_id"]) or {}).get("name"),
+          "policy": policy_text(i) if i["kind"] != "fee" else None}
+    return d
 
 
-async def resolve(db: AsyncSession, event: DisruptionEvent, action: str, choice: str = "primary") -> dict:
-    item = await db.get(ItineraryItem, event.itinerary_item_id)
-    result: dict = {"event_id": event.id, "action": action}
-    if action == "accept":
-        ctx, cands, _, _ = await _solve(db, event, item)
-        idx = 1 if choice == "backup" else 0
-        if len(cands) <= idx:
-            raise ValueError("That alternative is no longer available.")
-        c = cands[idx]
-        exp: Experience = c["exp"]
-        new = ItineraryItem(
-            itinerary_id=item.itinerary_id, type="suggested", status="confirmed", experience_id=exp.id, title=exp.title,
-            location_key=exp.location.get("key"), start_time=at(ctx.trip_date, c["fit"]["start"]),
-            end_time=at(ctx.trip_date, c["fit"]["end"]), slot_start=at(ctx.trip_date, ctx.start),
-            slot_end=at(ctx.trip_date, ctx.end), price_paid=exp.price, booking_ref=booking_ref())
-        db.add(new)
-        item.status = "replaced"
-        _, user, *_ = await load_world(db, item.itinerary_id)
-        exp.capacity_left = max(0, exp.capacity_left - HEADCOUNT.get(user.group_type, 1))
-        event.resolution_status = "accepted"
-        await bump_demand(db, f"vendor:{exp.vendor_id}", "booked")
-        await db.flush()
-        result["new_item_id"] = new.id
-        result["booking_ref"] = new.booking_ref
-    else:
-        event.resolution_status = "dismissed"
-        if event.trigger_type == "unavailable":
-            item.status = "replaced"  # can't keep it; free the window so a new suggestion appears
-        else:
-            item.status = "confirmed"  # traveler chose to keep the original plan
-            if event.context.get("late_minutes"):
-                late = event.context["late_minutes"]
-                item.start_time += timedelta(minutes=late)
-                item.end_time += timedelta(minutes=late)
-    late = event.context.get("late_minutes") or 0
-    if late:
-        # hold the time the traveler is behind so it doesn't show up as bookable free time
-        *_, all_items, exps, _ = await load_world(db, item.itinerary_id)
-        s, _ = slot_for_item(item, all_items)
-        db.add(ItineraryItem(itinerary_id=item.itinerary_id, type="booked", status="confirmed",
-                             title=f"Running {late} min behind", location_key=_prev_loc(item, all_items, exps).get("key"),
-                             start_time=s, end_time=s + timedelta(minutes=late)))
-        await db.flush()
-    await recompute_gaps(db, item.itinerary_id)
-    await db.commit()
-    return result
-
-
-# ---------------------------------------------------------------- serialization
-async def serialize_event(db: AsyncSession, ev: DisruptionEvent, refresh: bool = True) -> dict:
-    item = await db.get(ItineraryItem, ev.itinerary_item_id)
-    exp = await db.get(Experience, item.experience_id) if item.experience_id else None
-    alts = await solve_alternatives(db, ev) if (refresh and ev.resolution_status == "pending") else {
-        "primary": ev.alternatives[0] if ev.alternatives else None,
-        "backup": ev.alternatives[1] if len(ev.alternatives or []) > 1 else None}
-    return {"id": ev.id, "itinerary_item_id": ev.itinerary_item_id, "trigger_type": ev.trigger_type,
-            "trigger_label": TRIGGER_LABELS.get(ev.trigger_type, ev.trigger_type), "reason": ev.reason,
-            "created_at": ev.created_at.isoformat(), "resolution_status": ev.resolution_status,
-            "original": {"title": item.title, "start_label": fmt_clock(to_min(item.start_time)),
-                         "end_label": fmt_clock(to_min(item.end_time)),
-                         "experience": serialize_exp(exp) if exp else None},
-            **alts}
-
-
-async def serialize_itinerary(db: AsyncSession, itinerary_id: int) -> dict:
-    st = await get_state(db)
-    itin, user, sess, items, exps, vendors = await load_world(db, itinerary_id)
-    now_min = hhmm_to_min(st.demo_now)
-    out_items = []
-    for i in sorted(items, key=lambda x: (x.start_time, x.type != "gap")):
-        exp = exps.get(i.experience_id) if i.experience_id else None
-        out_items.append({
-            "id": i.id, "type": i.type, "status": i.status, "title": i.title or (exp.title if exp else "Free time"),
-            "start_time": i.start_time.isoformat(), "end_time": i.end_time.isoformat(),
-            "start_label": fmt_clock(to_min(i.start_time)), "end_label": fmt_clock(to_min(i.end_time)),
-            "minutes": round((i.end_time - i.start_time).total_seconds() / 60),
-            "location": item_location(i, exps) if i.type != "gap" else None,
-            "experience": serialize_exp(exp, vendors.get(exp.vendor_id)) if exp else None,
-            "booking_ref": i.booking_ref, "price_paid": i.price_paid,
-            "is_past": to_min(i.end_time) <= now_min,
-        })
-    gaps = [x for x in out_items if x["type"] == "gap" and not x["is_past"]]
-    pending = (await db.execute(select(DisruptionEvent).join(ItineraryItem, ItineraryItem.id == DisruptionEvent.itinerary_item_id)
-                                .where(ItineraryItem.itinerary_id == itinerary_id, DisruptionEvent.resolution_status == "pending")
-                                .order_by(DisruptionEvent.id.desc()))).scalars().all()
-    spent = sum((i.price_paid or 0) for i in occupying(items) if i.experience_id)
-    return {
-        "id": itin.id, "trip_date": itin.trip_date.isoformat(),
-        "user": {"id": user.id, "display_name": user.display_name, "group_type": user.group_type,
-                 "accessibility_flags": user.accessibility_flags, "home_currency": user.home_currency},
-        "session": {"id": sess.id, "budget_envelope": sess.budget_envelope, "location": sess.location,
-                    "intent_raw_text": sess.intent_raw_text, "intent_parsed_json": sess.intent_parsed_json} if sess else None,
-        "spent": spent, "items": out_items, "next_gap_id": gaps[0]["id"] if gaps else None,
-        "weather_bad": st.weather_bad, "demo_now": st.demo_now,
-        "pending_disruption_ids": [e.id for e in pending],
+async def serialize_tour(db: AsyncSession, tour: Tour, st: AppState, full=True) -> dict:
+    rows = await load_items(db, tour.id)
+    items = [item_dict(r) for r in rows]
+    ctx = ctx_for(tour, st)
+    pricing = P.price(items, ctx)
+    pay = await payments_summary(db, tour, pricing["total"])
+    cust = await db.get(Customer, tour.customer_id)
+    coord = await db.get(Coordinator, tour.coordinator_id) if tour.coordinator_id else None
+    pending = (await db.execute(select(ChangeEvent).where(ChangeEvent.tour_id == tour.id, ChangeEvent.status == "pending"))).scalars().all()
+    base = {
+        "id": tour.id, "code": tour.code, "title": tour.title, "status": tour.status, "stage": stage(tour, st),
+        "start_date": tour.start_date.isoformat(), "end_date": end_date(tour).isoformat(), "days": tour.days,
+        "current_day": current_day(tour, st), "group": tour.group, "prefs": tour.prefs,
+        "route": [{**s, "name": P.W["dests"].get(s["dest"], {}).get("name"),
+                   "from_date": (tour.start_date + timedelta(days=s["first_day"] - 1)).isoformat()} for s in tour.route or []],
+        "customer": {"id": cust.id, "name": cust.name, "email": cust.email, "phone": cust.phone, "city": cust.city, "segment": cust.segment} if cust else None,
+        "coordinator": {"id": coord.id, "name": coord.name, "phone": coord.phone, "languages": coord.languages} if coord else None,
+        "pricing": pricing, "payments": {k: v for k, v in pay.items() if full or k != "ledger"},
+        "pending_changes": len(pending), "travelers": ctx["travelers"],
+        "confirmations": {"pending": sum(1 for i in items if P.live(i) and i.get("vendor_status") == "pending"),
+                          "confirmed": sum(1 for i in items if P.live(i) and i.get("vendor_status") == "confirmed"),
+                          "declined": sum(1 for i in items if P.live(i) and i.get("vendor_status") == "declined")},
+        "review": tour.review, "created_at": tour.created_at.isoformat(),
     }
+    if not full:
+        base["risk_count"] = len(risks(tour, items, ctx, st)) if tour.status == "booked" else 0
+        return base
+    days = []
+    for d in range(1, tour.days + 1):
+        dest = P.dest_for_day(ctx, d)
+        stay = next((i for i in items if i["kind"] == "hotel" and P.live(i) and i["day"] <= d < i["day"] + i["nights"]), None)
+        days.append({"day": d, "date": (tour.start_date + timedelta(days=d - 1)).isoformat(), "dest": dest,
+                     "dest_name": P.W["dests"].get(dest, {}).get("name"), "rain": P.rain_on(ctx, dest, d),
+                     "stay": {"id": stay["id"], "title": stay["title"], "night": d - stay["day"] + 1, "nights": stay["nights"]} if stay else None,
+                     "items": [ser_item(tour, i, st) for i in sorted([i for i in items if i["day"] == d], key=lambda i: (i["start_min"], i["id"]))]})
+    tasks = (await db.execute(select(Task).where(Task.tour_id == tour.id).order_by(Task.created_at.desc()))).scalars().all()
+    events = (await db.execute(select(ChangeEvent).where(ChangeEvent.tour_id == tour.id).order_by(ChangeEvent.created_at.desc()))).scalars().all()
+    base |= {
+        "days_detail": days, "notes": tour.notes or [], "conflicts": P.conflicts(items, ctx) if tour.status == "draft" else [],
+        "risks": risks(tour, items, ctx, st) if tour.status == "booked" else [],
+        "checklist": checklist(tour, pay), "packing": packing_for(tour),
+        "tasks": [{"id": t.id, "kind": t.kind, "text": t.text, "status": t.status, "vendor_id": t.vendor_id,
+                   "vendor_name": (P.W["vendors"].get(t.vendor_id) or {}).get("name"), "at": t.created_at.isoformat()} for t in tasks],
+        "changes": [{"id": e.id, "label": e.label, "reason": e.reason, "status": e.status, "chosen": e.chosen, "source": e.source,
+                     "resolved_by": e.resolved_by, "at": e.created_at.isoformat(),
+                     "chosen_label": next((o["label"] for o in e.options if o["key"] == e.chosen), None)} for e in events],
+    }
+    return base
+
+
+# ---------------------------------------------------------------- booking
+async def assign_coordinator(db, tour: Tour) -> Coordinator | None:
+    coords = list((await db.execute(select(Coordinator))).scalars())
+    if not coords:
+        return None
+    active = list((await db.execute(select(Tour).where(Tour.status == "booked"))).scalars())
+    load = {c.id: sum(1 for t in active if t.coordinator_id == c.id) for c in coords}
+    stops = [s["dest"] for s in tour.route or []]
+    return min(coords, key=lambda c: (load[c.id] - (1.5 if c.base in stops else 0), c.id))
+
+
+async def book_tour(db, tour: Tour, pay_mode: str = "deposit", method: str = "upi") -> dict:
+    st = await get_state(db)
+    rows = await load_items(db, tour.id)
+    if not tour.coordinator_id:
+        c = await assign_coordinator(db, tour)
+        tour.coordinator_id = c.id if c else None
+    refs = []
+    for r in rows:
+        if r.status != "planned":
+            continue
+        r.status = "booked"
+        r.booking_ref = booking_ref(tour, r)
+        r.vendor_status = "pending"
+        refs.append({"item_id": r.id, "ref": r.booking_ref, "title": r.title, "kind": r.kind, "day": r.day,
+                     "vendor": (P.W["vendors"].get(r.vendor_id) or {}).get("name"), "start_label": P.label(r.start_min)})
+        await add_task(db, "confirm", f"Confirm {r.booking_ref}: {r.title} · day {r.day} · {r.qty} {'room(s)' if r.kind == 'hotel' else 'pax'}",
+                       tour.id, r.vendor_id, tour.coordinator_id)
+    tour.status = "booked"
+    tour.booked_at = datetime.utcnow()
+    total = P.price([item_dict(r) for r in rows], ctx_for(tour, st))["total"]
+    amount = total if pay_mode == "full" else round(total * DEPOSIT)
+    if amount > 0:
+        db.add(Payment(tour_id=tour.id, amount=amount, kind="payment", method=method,
+                       note="Full payment" if pay_mode == "full" else "30% deposit"))
+    return {"refs": refs, "paid": amount, "total": total}

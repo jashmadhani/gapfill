@@ -1,143 +1,206 @@
-"""ORM models. Field names follow the spec; a few extra columns (noted inline) support the demo."""
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
 
 
-class User(Base):
-    __tablename__ = "users"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    display_name: Mapped[str] = mapped_column(String(120))
-    group_type: Mapped[str] = mapped_column(String(20), default="couple")  # solo/couple/family/large_group
-    accessibility_flags: Mapped[list] = mapped_column(JSON, default=list)
-    home_currency: Mapped[str] = mapped_column(String(8), default="INR")
+def utcnow():
+    return datetime.utcnow()
 
 
-class Session(Base):
-    __tablename__ = "sessions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    location: Mapped[dict] = mapped_column(JSON)  # {"lat", "lng", "key", "name"}
-    time_window_start: Mapped[datetime] = mapped_column(DateTime)
-    time_window_end: Mapped[datetime] = mapped_column(DateTime)
-    budget_envelope: Mapped[float] = mapped_column(Float)
-    intent_raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    intent_parsed_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+class AppState(Base):
+    """Single row: demo clock, forecast and which tour the traveler app is showing."""
+    __tablename__ = "app_state"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    demo_date: Mapped[date] = mapped_column(Date)
+    demo_time: Mapped[str] = mapped_column(String(5), default="11:30")
+    active_tour_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rain: Mapped[list] = mapped_column(JSON, default=list)  # [{"dest": "jaipur", "date": "2026-09-27"}]
 
 
-class Itinerary(Base):
-    __tablename__ = "itineraries"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    trip_date: Mapped[date] = mapped_column(Date)
-    session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), nullable=True)  # extra
-
-
-class ItineraryItem(Base):
-    __tablename__ = "itinerary_items"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    itinerary_id: Mapped[int] = mapped_column(ForeignKey("itineraries.id"))
-    type: Mapped[str] = mapped_column(String(20))  # booked/suggested/gap
-    start_time: Mapped[datetime] = mapped_column(DateTime)
-    end_time: Mapped[datetime] = mapped_column(DateTime)
-    experience_id: Mapped[int | None] = mapped_column(ForeignKey("experiences.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="confirmed")  # confirmed/pending/disrupted/replaced
-    # extra: display + routing context
-    title: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    location_key: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    # extra: the idle window this experience was placed into, so replans re-solve the original slot
-    slot_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    slot_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    booking_ref: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    price_paid: Mapped[float | None] = mapped_column(Float, nullable=True)
+class Destination(Base):
+    __tablename__ = "destinations"
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    region: Mapped[str] = mapped_column(String(80))
+    tagline: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text)
+    lat: Mapped[float] = mapped_column(Float)
+    lng: Mapped[float] = mapped_column(Float)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    ideal_nights: Mapped[int] = mapped_column(Integer, default=2)
+    airport: Mapped[bool] = mapped_column(Boolean, default=False)
+    rail: Mapped[bool] = mapped_column(Boolean, default=True)
+    best_months: Mapped[str] = mapped_column(String(40), default="Oct–Mar")
 
 
 class Vendor(Base):
+    """Hotels, transport providers and activity operators the tour operator works with."""
     __tablename__ = "vendors"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    contact_channel: Mapped[str] = mapped_column(String(120), default="whatsapp")
-    status: Mapped[str] = mapped_column(String(20), default="open")  # open/closed/full
-    onboarding_source: Mapped[str] = mapped_column(String(40), default="seed")
+    kind: Mapped[str] = mapped_column(String(16))  # hotel | transport | activity
+    dest_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    contact: Mapped[str] = mapped_column(String(80), default="")
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed
+    commission_pct: Mapped[float] = mapped_column(Float, default=10)
 
 
-class Experience(Base):
-    __tablename__ = "experiences"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+class Offering(Base):
+    """A bookable component: an activity, a hotel (per room-night) or a transport product."""
+    __tablename__ = "offerings"
+    id: Mapped[int] = mapped_column(primary_key=True)
     vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id"))
-    title: Mapped[str] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(16))  # activity | hotel | transport
+    dest_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
-    category_tags: Mapped[list] = mapped_column(JSON, default=list)
-    price: Mapped[float] = mapped_column(Float)
-    duration_min: Mapped[int] = mapped_column(Integer)
-    location: Mapped[dict] = mapped_column(JSON)  # {"lat", "lng", "key", "name"}
-    accessibility_attributes: Mapped[dict] = mapped_column(JSON, default=dict)
-    group_suitability: Mapped[list] = mapped_column(JSON, default=list)
-    opening_hours: Mapped[dict] = mapped_column(JSON, default=dict)  # {"open": "HH:MM", "close": "HH:MM"}
-    indoor_outdoor: Mapped[str] = mapped_column(String(10), default="indoor")  # indoor/outdoor/mixed
-    capacity_left: Mapped[int] = mapped_column(Integer, default=10)
-    # extra: cached trust score (recomputed on seed / review insert, never per request)
-    trust_score: Mapped[float] = mapped_column(Float, default=0.0)
-    trust_meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    duration_min: Mapped[int] = mapped_column(Integer, default=0)
+    price: Mapped[float] = mapped_column(Float)  # activity: per person · hotel: per room-night · transport: rate (see mode)
+    open: Mapped[str] = mapped_column(String(5), default="00:00")
+    close: Mapped[str] = mapped_column(String(5), default="23:59")
+    closed_weekdays: Mapped[list] = mapped_column(JSON, default=list)  # 0 = Monday
+    indoor_outdoor: Mapped[str] = mapped_column(String(8), default="indoor")
+    rating: Mapped[float] = mapped_column(Float, default=4.3)
+    rating_count: Mapped[int] = mapped_column(Integer, default=50)
+    lat: Mapped[float] = mapped_column(Float, default=0)
+    lng: Mapped[float] = mapped_column(Float, default=0)
+    kid_friendly: Mapped[bool] = mapped_column(Boolean, default=True)
+    step_free: Mapped[bool] = mapped_column(Boolean, default=False)
+    tier: Mapped[str | None] = mapped_column(String(16), nullable=True)  # hotels: budget | standard | premium | luxury
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)  # transport: car | train | flight
+    capacity: Mapped[int] = mapped_column(Integer, default=20)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed | full
+    amenities: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    email: Mapped[str] = mapped_column(String(120), default="")
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    city: Mapped[str] = mapped_column(String(60), default="")
+    segment: Mapped[str] = mapped_column(String(20), default="couple")
+    interests: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class Coordinator(Base):
+    __tablename__ = "coordinators"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    phone: Mapped[str] = mapped_column(String(32), default="")
+    base: Mapped[str] = mapped_column(String(32), default="jaipur")
+    languages: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class Tour(Base):
+    __tablename__ = "tours"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(160))
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"))
+    coordinator_id: Mapped[int | None] = mapped_column(ForeignKey("coordinators.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft | booked | cancelled | reviewed
+    start_date: Mapped[date] = mapped_column(Date)
+    days: Mapped[int] = mapped_column(Integer)
+    prefs: Mapped[dict] = mapped_column(JSON, default=dict)
+    group: Mapped[dict] = mapped_column(JSON, default=dict)  # {name, adults, children, members: []}
+    route: Mapped[list] = mapped_column(JSON, default=list)  # [{dest, nights, first_day}]
+    notes: Mapped[list] = mapped_column(JSON, default=list)  # optimisation notes
+    checklist: Mapped[dict] = mapped_column(JSON, default=dict)
+    review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    booked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TourItem(Base):
+    __tablename__ = "tour_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id"), index=True)
+    day: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))  # activity | hotel | transport | fee
+    offering_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    vendor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    dest_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    from_key: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    start_min: Mapped[int] = mapped_column(Integer, default=0)
+    end_min: Mapped[int] = mapped_column(Integer, default=0)
+    nights: Mapped[int] = mapped_column(Integer, default=0)
+    qty: Mapped[int] = mapped_column(Integer, default=1)
+    unit_price: Mapped[float] = mapped_column(Float, default=0)
+    price: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="planned")  # planned | booked | disrupted | replaced | cancelled
+    booking_ref: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    vendor_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # pending | confirmed | declined
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id"), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    kind: Mapped[str] = mapped_column(String(16), default="payment")  # payment | refund
+    method: Mapped[str] = mapped_column(String(20), default="upi")
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ChangeEvent(Base):
+    """A disruption or requested change, its impact analysis, and the recovery options offered."""
+    __tablename__ = "change_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int] = mapped_column(ForeignKey("tours.id"), index=True)
+    trigger_type: Mapped[str] = mapped_column(String(24))
+    label: Mapped[str] = mapped_column(String(80))
+    reason: Mapped[str] = mapped_column(Text)
+    impact: Mapped[dict] = mapped_column(JSON, default=dict)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | accepted | dismissed
+    chosen: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="system")  # system | traveler | operator | vendor
+    resolved_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Task(Base):
+    """Coordination work for the operator: vendor confirmations, cancellations, callbacks, payment follow-ups."""
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    vendor_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    coordinator_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    kind: Mapped[str] = mapped_column(String(16))  # confirm | cancel | notify | callback | payment
+    text: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class Review(Base):
     __tablename__ = "reviews"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    experience_id: Mapped[int] = mapped_column(ForeignKey("experiences.id"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    offering_id: Mapped[int] = mapped_column(Integer, index=True)
+    tour_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    author: Mapped[str] = mapped_column(String(80), default="Traveler")
     rating: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
-class Bundle(Base):
-    __tablename__ = "bundles"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    session_id: Mapped[int] = mapped_column(ForeignKey("sessions.id"))
-    experience_ids: Mapped[list] = mapped_column(JSON)
-    total_price: Mapped[float] = mapped_column(Float)
-
-
-class DisruptionEvent(Base):
-    __tablename__ = "disruption_events"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    itinerary_item_id: Mapped[int] = mapped_column(ForeignKey("itinerary_items.id"))
-    trigger_type: Mapped[str] = mapped_column(String(20))  # unavailable/weather/time_shrink/budget_shrink
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    resolution_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending/accepted/dismissed
-    # extra: plain-language reason, the constraints to re-solve against, and the computed alternatives
-    reason: Mapped[str] = mapped_column(Text, default="")
-    context: Mapped[dict] = mapped_column(JSON, default=dict)
-    alternatives: Mapped[list] = mapped_column(JSON, default=list)
-
-
-class DemandSignal(Base):
-    __tablename__ = "demand_signals"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    vendor_id_or_area: Mapped[str] = mapped_column(String(60))  # "vendor:3" or "area:johari_bazaar"
-    query_tag: Mapped[str] = mapped_column(String(60))
-    count: Mapped[int] = mapped_column(Integer, default=0)
-    date: Mapped[date] = mapped_column(Date)
-
-
-class TravelTime(Base):
-    """Static precomputed travel-time lookup table (no external maps API)."""
-    __tablename__ = "travel_times"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    from_key: Mapped[str] = mapped_column(String(60))
-    to_key: Mapped[str] = mapped_column(String(60))
-    minutes: Mapped[int] = mapped_column(Integer)
-
-
-class AppState(Base):
-    """Single-row demo state: weather flag, demo clock, active session/itinerary."""
-    __tablename__ = "app_state"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    weather_bad: Mapped[bool] = mapped_column(default=False)
-    demo_now: Mapped[str] = mapped_column(String(5), default="11:30")
-    active_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    active_session_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    active_itinerary_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tour_id: Mapped[int] = mapped_column(Integer, index=True)
+    role: Mapped[str] = mapped_column(String(12))  # user | assistant
+    text: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_SQLITE = f"sqlite+aiosqlite:///{os.path.join(os.path.dirname(_HERE), 'gapfill.db')}"
+DEFAULT_SQLITE = f"sqlite+aiosqlite:///{os.path.join(os.path.dirname(_HERE), 'tourcraft.db')}"
 
-# Set DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/gapfill to use Postgres.
+# Set DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/tourcraft to use Postgres.
 DATABASE_URL = os.environ.get("DATABASE_URL", DEFAULT_SQLITE)
 
 engine = create_async_engine(DATABASE_URL, echo=False)

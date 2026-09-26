@@ -3,17 +3,18 @@ import { api } from './api'
 import { useLive } from './live'
 
 const Ctx = createContext(null)
-export const useTraveler = () => useContext(Ctx)
+export const useTour = () => useContext(Ctx)
 
-// Shared traveler state: app state, active itinerary, and live disruption cards pushed over the WebSocket.
-export function TravelerProvider({ children }) {
+// Shared traveler state: demo state, the active tour, and change cards pushed live over the WebSocket.
+export function TourProvider({ children }) {
   const [state, setState] = useState(null)
-  const [itinerary, setItinerary] = useState(null)
-  const [events, setEvents] = useState([]) // pending disruption cards
-  const [version, setVersion] = useState(0) // bumps whenever recommendations may be stale
+  const [tour, setTour] = useState(null)
+  const [events, setEvents] = useState([]) // pending change cards for the active tour
+  const [version, setVersion] = useState(0)
   const [toast, setToast] = useState(null)
   const [error, setError] = useState(null)
   const toastTimer = useRef()
+  const activeRef = useRef(null)
 
   const notify = useCallback((msg, tone = 'info') => {
     clearTimeout(toastTimer.current)
@@ -21,47 +22,50 @@ export function TravelerProvider({ children }) {
     toastTimer.current = setTimeout(() => setToast(null), 4200)
   }, [])
 
+  const loadPending = useCallback(async (id = activeRef.current) => {
+    if (!id) return setEvents([])
+    try { setEvents(await api.changes(`?tour_id=${id}&status=pending`)) } catch { /* ignore */ }
+  }, [])
+
   const refresh = useCallback(async () => {
     try {
       const st = await api.state()
+      activeRef.current = st.active_tour_id
+      const t = st.active_tour_id ? await api.tour(st.active_tour_id) : null
       setState(st)
-      if (st.active_itinerary_id) setItinerary(await api.itinerary(st.active_itinerary_id))
+      setTour(t)
       setError(null)
-    } catch (e) {
-      setError('Can’t reach the GapFill API. Is the backend running on :8000?')
+    } catch {
+      setError('Can’t reach the TourCraft API. Is the backend running on :8000?')
     }
     setVersion((v) => v + 1)
   }, [])
 
-  const loadPending = useCallback(async () => {
-    try { setEvents(await api.pendingDisruptions()) } catch { /* no active itinerary yet */ }
-  }, [])
+  useEffect(() => { refresh().then(() => loadPending()) }, [refresh, loadPending])
 
-  useEffect(() => { refresh(); loadPending() }, [refresh, loadPending])
-
-  const live = useLive(async (m) => {
+  const live = useLive((m) => {
+    const mine = !m.tour_id || m.tour_id === activeRef.current
     switch (m.type) {
-      case 'disruption': {
-        // fetch fresh alternatives so the card reflects the very latest availability
-        const ev = await api.alternatives(m.event.id).catch(() => m.event)
-        setEvents((prev) => [ev, ...prev.filter((e) => e.id !== ev.id && e.itinerary_item_id !== ev.itinerary_item_id)])
-        break
-      }
-      case 'disruption_resolved':
-        setEvents((prev) => prev.filter((e) => e.id !== m.event_id))
+      case 'change':
+        if (m.tour_id === activeRef.current) setEvents((prev) => [m.event, ...prev.filter((e) => e.id !== m.event.id)])
         refresh()
+        break
+      case 'change_resolved':
+        setEvents((prev) => prev.filter((e) => e.id !== m.event_id))
+        if (mine) refresh()
         break
       case 'demo_reset':
         setEvents([])
-        refresh()
+        refresh().then(() => loadPending())
         break
-      case 'itinerary_updated':
-        if (m.note) notify(m.note)
-        refresh()
+      case 'tour_updated':
+      case 'bookings':
+        if (mine) refresh()
         break
-      case 'weather':
+      case 'clock':
+      case 'world':
       case 'vendor_status':
-      case 'listing_published':
+      case 'tour_created':
         refresh()
         break
       case 'poll':
@@ -72,6 +76,13 @@ export function TravelerProvider({ children }) {
     }
   })
 
-  const value = { state, itinerary, events, setEvents, version, refresh, loadPending, toast, notify, live, error }
+  const activate = useCallback(async (id) => {
+    await api.activate(id)
+    activeRef.current = id
+    await refresh()
+    await loadPending(id)
+  }, [refresh, loadPending])
+
+  const value = { state, tour, events, setEvents, version, refresh, loadPending, toast, notify, live, error, activate }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

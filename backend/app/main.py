@@ -1,26 +1,25 @@
-"""GapFill API. Run: uvicorn app.main:app --reload --port 8000"""
-import asyncio
+"""TourCraft API. Run: uvicorn app.main:app --reload --port 8000"""
 import json
+import os
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect as sa_inspect
-from sqlalchemy import select
+from sqlalchemy import func, inspect as sa_inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import nlp
+from . import assist, customize
+from . import planner as P
+from .adapt import resolve_event, run_trigger
+from .catalog import INTERESTS, PACES, TIERS
 from .db import SessionLocal, backend_name, engine, get_db
-from .engine import (ACCESS_FLAGS, HEADCOUNT, _route, at, build_slot_context, hhmm_to_min, load_travel_table,
-                     load_world, loc_of, recompute_gaps, refresh_trust, serialize_exp)
-from .models import (Bundle, DemandSignal, DisruptionEvent, Experience, Itinerary, ItineraryItem, Review, Session,
-                     User, Vendor)
-from .seed import create_sample_itinerary, reset_and_seed
-from .seed_data import LOCATIONS
-from .services import (booking_ref, bump_demand, get_state, recommend_for_gap, resolve, scan_unavailable,
-                       scan_weather, serialize_event, serialize_itinerary, trigger_budget, trigger_running_late)
+from .models import (ChangeEvent, ChatMessage, Coordinator, Customer, Offering, Payment, Review, Task, Tour, TourItem,
+                     Vendor)
+from .seed import reset_and_seed
+from .services import (book_tour, ctx_for, current_day, get_state, item_dict, load_items, payments_summary, ser_item,
+                       ser_offering, serialize_tour, stage)
 
 
 # ---------------------------------------------------------------- websocket hub
@@ -50,137 +49,163 @@ hub = Hub()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.connect() as conn:
-        has_tables = await conn.run_sync(lambda c: sa_inspect(c).has_table("app_state"))
-    if not has_tables:
+        has = await conn.run_sync(lambda c: sa_inspect(c).has_table("app_state"))
+    if not has:
         await reset_and_seed()
     async with SessionLocal() as db:
-        await load_travel_table(db)
+        await P.load_world(db)
     yield
 
 
-app = FastAPI(title="GapFill API", version="1.0", lifespan=lifespan)
+app = FastAPI(title="TourCraft API", version="1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
-async def notify_itinerary(itinerary_id: int, **extra):
-    await hub.broadcast({"type": "itinerary_updated", "itinerary_id": itinerary_id, **extra})
+def llm_mode():
+    return "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "rules"
 
 
-async def notify_events(db: AsyncSession, events: list):
-    for ev in events:
-        await hub.broadcast({"type": "disruption", "event": await serialize_event(db, ev, refresh=False)})
+async def tour_or_404(db, tour_id) -> Tour:
+    t = await db.get(Tour, tour_id)
+    if not t:
+        raise HTTPException(404, "Tour not found")
+    return t
 
 
-async def active_itinerary_id(db: AsyncSession) -> int:
-    st = await get_state(db)
-    if not st.active_itinerary_id:
-        raise HTTPException(404, "No active itinerary. Start a session first.")
-    return st.active_itinerary_id
+async def ser_event(db, e: ChangeEvent) -> dict:
+    tour = await db.get(Tour, e.tour_id)
+    return {"id": e.id, "tour_id": e.tour_id, "tour_code": tour.code if tour else None, "tour_title": tour.title if tour else None,
+            "trigger_type": e.trigger_type, "label": e.label, "reason": e.reason,
+            "impact": {k: v for k, v in (e.impact or {}).items() if k != "prev_status"},
+            "options": [{k: v for k, v in o.items() if k != "changes"} for o in e.options], "status": e.status, "chosen": e.chosen,
+            "source": e.source, "resolved_by": e.resolved_by, "created_at": e.created_at.isoformat(),
+            "resolved_at": e.resolved_at.isoformat() if e.resolved_at else None}
+
+
+async def after_events(db, events):
+    for e in events:
+        await hub.broadcast({"type": "change", "tour_id": e.tour_id, "event": await ser_event(db, e)})
+
+
+async def tour_changed(tour_id, **extra):
+    await hub.broadcast({"type": "tour_updated", "tour_id": tour_id, **extra})
 
 
 # ---------------------------------------------------------------- schemas
-class SessionStartIn(BaseModel):
-    user_id: int | None = None
-    display_name: str | None = None
-    location_key: str | None = "hotel"
-    lat: float | None = None
-    lng: float | None = None
-    trip_date: date | None = None
-    group_type: str = "couple"
-    accessibility_flags: list[str] = Field(default_factory=list)
-    budget_envelope: float = 3000
-    time_window_start: str = "07:00"
-    time_window_end: str = "22:00"
-
-
-class IntentIn(BaseModel):
-    session_id: int | None = None
-    text: str
-
-
-class ItineraryIn(BaseModel):
-    user_id: int | None = None
-    session_id: int | None = None
-    trip_date: date | None = None
-    source: str = "sample"  # sample | fresh
-
-
-class ItemIn(BaseModel):
-    type: str = "booked"
+class PlanIn(BaseModel):
+    customer_id: int | None = None
+    name: str | None = None
     title: str | None = None
-    start_time: str | None = None  # "HH:MM"
-    end_time: str | None = None
-    location_key: str | None = None
-    experience_id: int | None = None
+    start_date: date | None = None
+    days: int = 6
+    destinations: list[str] = Field(default_factory=list)
+    start_city: str = "delhi"
+    end_city: str | None = None
+    adults: int = 2
+    children: int = 0
+    budget: float = 150000
+    hotel_tier: str = "standard"
+    transport: str = "best"
+    interests: list[str] = Field(default_factory=list)
+    pace: str = "balanced"
+    needs: dict = Field(default_factory=dict)
 
 
-class ItemsIn(BaseModel):
-    slot_id: int | None = None
-    experience_ids: list[int] = Field(default_factory=list)  # placed into slot_id in order (single or bundle)
-    items: list[ItemIn] = Field(default_factory=list)  # raw items, e.g. a new booked commitment
+class SwapIn(BaseModel):
+    offering_id: int | None = None
+    mode: str | None = None
+
+
+class AddIn(BaseModel):
+    offering_id: int
+    day: int | None = None
+
+
+class BookIn(BaseModel):
+    pay: str = "deposit"  # deposit | full
+    method: str = "upi"
+
+
+class PaymentIn(BaseModel):
+    amount: float
+    method: str = "upi"
+    kind: str = "payment"
+    note: str = ""
+
+
+class TourPatch(BaseModel):
+    coordinator_id: int | None = None
+    title: str | None = None
+    prefs: dict | None = None
+    regenerate: bool = False
+    status: str | None = None
 
 
 class TriggerIn(BaseModel):
-    trigger_type: str  # unavailable | weather | time_shrink | budget_shrink
-    itinerary_id: int | None = None
-    experience_id: int | None = None
+    trigger_type: str
+    tour_id: int | None = None
+    item_id: int | None = None
+    offering_id: int | None = None
     vendor_id: int | None = None
-    itinerary_item_id: int | None = None
-    minutes: int = 45
+    dest: str | None = None
+    date: str | None = None
+    clear: bool = False
+    minutes: int | None = None
     new_budget: float | None = None
-    weather_bad: bool | None = None
+    source: str = "system"
 
 
 class ResolveIn(BaseModel):
     action: str  # accept | dismiss
-    choice: str = "primary"  # primary | backup
+    option: str | None = None
+    by: str = "traveler"
 
 
-class OnboardIn(BaseModel):
-    vendor_id: int | None = None
-    questions: list[str] = Field(default_factory=list)
-    answers: list[str]
-
-
-class PublishIn(BaseModel):
-    vendor_id: int | None = None
-    vendor_name: str | None = None
-    draft: dict
-
-
-class VendorStatusIn(BaseModel):
-    status: str  # open | closed | full | slots
-    slots_left: int | None = None
-    experience_id: int | None = None
-
-
-class BookingIn(BaseModel):
-    itinerary_item_ids: list[int]
-
-
-class ClockIn(BaseModel):
-    demo_now: str
+class ChatIn(BaseModel):
+    text: str
 
 
 class ReviewIn(BaseModel):
-    rating: int
+    overall: int
     text: str = ""
+    items: list[dict] = Field(default_factory=list)  # [{item_id, rating, text}]
+
+
+class VendorStatusIn(BaseModel):
+    status: str  # open | closed
+    offering_id: int | None = None
+
+
+class VendorBookingIn(BaseModel):
+    action: str  # confirm | decline
+
+
+class ClockIn(BaseModel):
+    time: str | None = None
+    on_date: date | None = None
+    day: int | None = None  # jump to day N of the active tour
+
+
+class ChecklistIn(BaseModel):
+    key: str
+    done: bool
 
 
 # ---------------------------------------------------------------- meta / demo
 @app.get("/health")
 async def health():
-    return {"ok": True, "db": backend_name(), "llm": "anthropic" if nlp.os.environ.get("ANTHROPIC_API_KEY") and nlp.LLM_MODEL else "rules-fallback"}
+    return {"ok": True, "db": backend_name(), "assistant": llm_mode()}
 
 
 @app.get("/state")
 async def state(db: AsyncSession = Depends(get_db)):
     st = await get_state(db)
-    return {"weather_bad": st.weather_bad, "demo_now": st.demo_now, "active_user_id": st.active_user_id,
-            "active_session_id": st.active_session_id, "active_itinerary_id": st.active_itinerary_id,
-            "locations": [{"key": k, "name": v[0], "lat": v[1], "lng": v[2]} for k, v in LOCATIONS.items()],
-            "access_flags": ACCESS_FLAGS, "group_types": list(HEADCOUNT), "db": backend_name(),
-            "llm": "anthropic" if nlp.os.environ.get("ANTHROPIC_API_KEY") and nlp.LLM_MODEL else "rules-fallback"}
+    tour = await db.get(Tour, st.active_tour_id) if st.active_tour_id else None
+    return {"demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time, "active_tour_id": st.active_tour_id,
+            "active_day": current_day(tour, st) if tour else None, "rain": st.rain,
+            "destinations": [{"key": k, "name": d["name"], "airport": d["airport"], "rail": d["rail"]} for k, d in P.W["dests"].items()],
+            "interests": INTERESTS, "tiers": TIERS, "paces": list(PACES), "transport_modes": ["best", "car", "train", "flight"],
+            "db": backend_name(), "assistant": llm_mode()}
 
 
 @app.post("/demo/reset")
@@ -192,443 +217,563 @@ async def demo_reset():
 
 @app.post("/demo/clock")
 async def demo_clock(body: ClockIn, db: AsyncSession = Depends(get_db)):
-    hhmm_to_min(body.demo_now)
     st = await get_state(db)
-    st.demo_now = body.demo_now
+    if body.time:
+        P.hm(body.time)
+        st.demo_time = body.time
+    if body.on_date:
+        st.demo_date = body.on_date
+    if body.day is not None and st.active_tour_id:
+        tour = await db.get(Tour, st.active_tour_id)
+        st.demo_date = tour.start_date + timedelta(days=body.day - 1)
     await db.commit()
-    await notify_itinerary(st.active_itinerary_id or 0, reason="clock")
-    return {"demo_now": st.demo_now}
+    await hub.broadcast({"type": "clock", "demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time})
+    return {"demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time}
 
 
-# ---------------------------------------------------------------- session
-@app.post("/session/start")
-async def session_start(body: SessionStartIn, db: AsyncSession = Depends(get_db)):
+# ---------------------------------------------------------------- discover
+@app.get("/discover")
+async def discover(interests: str = "", db: AsyncSession = Depends(get_db)):
     st = await get_state(db)
-    user = await db.get(User, body.user_id or st.active_user_id or 0)
-    if not user:
-        user = User(display_name=body.display_name or "Traveler", group_type=body.group_type)
-        db.add(user)
-    if body.group_type not in HEADCOUNT:
-        raise HTTPException(400, f"group_type must be one of {list(HEADCOUNT)}")
-    bad = [f for f in body.accessibility_flags if f not in ACCESS_FLAGS]
-    if bad:
-        raise HTTPException(400, f"unknown accessibility flags {bad}")
-    user.group_type = body.group_type
-    user.accessibility_flags = body.accessibility_flags
-    if body.display_name:
-        user.display_name = body.display_name
-    await db.flush()
-    loc = loc_of(body.location_key or "hotel")
-    if body.lat is not None and body.lng is not None:
-        loc.update({"lat": body.lat, "lng": body.lng})
-    d = body.trip_date or date.today()
-    sess = Session(user_id=user.id, location=loc, time_window_start=at(d, hhmm_to_min(body.time_window_start)),
-                   time_window_end=at(d, hhmm_to_min(body.time_window_end)), budget_envelope=body.budget_envelope)
-    db.add(sess)
-    await db.flush()
-    st.active_user_id, st.active_session_id = user.id, sess.id
-    await db.commit()
-    return {"session_id": sess.id, "user_id": user.id, "location": loc, "trip_date": d.isoformat()}
+    ints = [i for i in interests.split(",") if i]
+    if not ints and st.active_tour_id:
+        tour = await db.get(Tour, st.active_tour_id)
+        ints = (tour.prefs or {}).get("interests", [])
+    return {"interests": ints, "destinations": P.recommend_destinations(ints),
+            "experiences": [ser_offering(o, brief=True) | {"reason": P.fit_reason(o, {"interests": ints})}
+                            for o in P.recommend_experiences(ints, limit=12)]}
 
 
-@app.post("/session/intent")
-async def session_intent(body: IntentIn, db: AsyncSession = Depends(get_db)):
+@app.get("/destinations/{key}")
+async def destination(key: str):
+    d = P.W["dests"].get(key)
+    if not d:
+        raise HTTPException(404, "Unknown destination")
+    return {**{k: d[k] for k in ("key", "name", "region", "tagline", "description", "tags", "ideal_nights", "airport", "rail", "best_months")},
+            "experiences": [ser_offering(o, brief=True) for o in sorted(P.acts_in(key), key=lambda o: -o["rating"])],
+            "hotels": [ser_offering(h) for h in P.hotels_in(key)]}
+
+
+@app.get("/offerings/{oid}")
+async def offering(oid: int, db: AsyncSession = Depends(get_db)):
+    o = P.off(oid)
+    if not o:
+        raise HTTPException(404, "Unknown offering")
+    reviews = (await db.execute(select(Review).where(Review.offering_id == oid).order_by(Review.created_at.desc()).limit(6))).scalars().all()
+    return ser_offering(o) | {"reviews": [{"author": r.author, "rating": r.rating, "text": r.text,
+                                           "days_ago": (datetime.utcnow() - r.created_at).days} for r in reviews]}
+
+
+# ---------------------------------------------------------------- tours (traveler + operator)
+@app.post("/tours/plan")
+async def plan_tour(body: PlanIn, db: AsyncSession = Depends(get_db)):
     st = await get_state(db)
-    sess = await db.get(Session, body.session_id or st.active_session_id or 0)
-    if not sess:
-        raise HTTPException(404, "session not found")
-    if not body.text.strip():
-        sess.intent_raw_text, sess.intent_parsed_json = None, None
-        await db.commit()
-        return {"parsed": None, "source": "cleared"}
-    parsed, source = await nlp.parse_intent(body.text)
-    sess.intent_raw_text, sess.intent_parsed_json = body.text, parsed
-    for tag in parsed.get("tags", []):
-        await bump_demand(db, f"area:{(sess.location or {}).get('key', 'hotel')}", tag)
-    await db.commit()
-    return {"parsed": parsed, "source": source}
-
-
-# ---------------------------------------------------------------- itinerary
-@app.post("/itinerary")
-async def create_itinerary(body: ItineraryIn, db: AsyncSession = Depends(get_db)):
-    st = await get_state(db)
-    user_id = body.user_id or st.active_user_id
-    sess = await db.get(Session, body.session_id or st.active_session_id or 0)
-    if not user_id or not sess:
-        raise HTTPException(400, "start a session first")
-    d = body.trip_date or sess.time_window_start.date()
-    if body.source == "sample":
-        itin = await create_sample_itinerary(db, user_id, sess.id, d)
+    if body.customer_id:
+        cust = await db.get(Customer, body.customer_id)
     else:
-        itin = Itinerary(user_id=user_id, trip_date=d, session_id=sess.id)
-        db.add(itin)
+        cust = Customer(name=body.name or "Guest traveler", segment="family" if body.children else "couple" if body.adults == 2 else "solo" if body.adults == 1 else "friends",
+                        interests=body.interests)
+        db.add(cust)
         await db.flush()
-        # a fresh day is anchored by the session window so the whole day is one open gap
-        name = sess.location.get("name", "base")
-        for title, t in ((f"Day starts — {name}", sess.time_window_start), (f"Back at {name}", sess.time_window_end)):
-            db.add(ItineraryItem(itinerary_id=itin.id, type="booked", status="confirmed", title=title,
-                                 start_time=at(d, t.hour * 60 + t.minute), end_time=at(d, t.hour * 60 + t.minute),
-                                 location_key=sess.location.get("key")))
-        await db.flush()
-        await recompute_gaps(db, itin.id)
-    st.active_itinerary_id = itin.id
-    await db.commit()
-    await notify_itinerary(itin.id, reason="created")
-    return await serialize_itinerary(db, itin.id)
-
-
-@app.get("/itinerary/{itinerary_id}")
-async def get_itinerary(itinerary_id: int, db: AsyncSession = Depends(get_db)):
-    if not await db.get(Itinerary, itinerary_id):
-        raise HTTPException(404, "itinerary not found")
-    return await serialize_itinerary(db, itinerary_id)
-
-
-@app.post("/itinerary/{itinerary_id}/gaps")
-async def post_gaps(itinerary_id: int, db: AsyncSession = Depends(get_db)):
-    await recompute_gaps(db, itinerary_id)
-    await db.commit()
-    return await serialize_itinerary(db, itinerary_id)
-
-
-@app.post("/itinerary/{itinerary_id}/items")
-async def add_items(itinerary_id: int, body: ItemsIn, db: AsyncSession = Depends(get_db)):
-    itin = await db.get(Itinerary, itinerary_id)
-    if not itin:
-        raise HTTPException(404, "itinerary not found")
-    created = []
-    if body.experience_ids:
-        gap = await db.get(ItineraryItem, body.slot_id or 0)
-        if not gap or gap.type != "gap":
-            raise HTTPException(409, "That free slot changed — refresh and try again.")
-        st = await get_state(db)
-        itin, user, sess, items, exps, vendors = await load_world(db, itinerary_id)
-        ctx = build_slot_context(itin=itin, user=user, sess=sess, items=items, exp_by_id=exps,
-                                 weather_bad=st.weather_bad, slot_start=gap.start_time, slot_end=gap.end_time)
-        chosen = [exps[i] for i in body.experience_ids if i in exps]
-        legs = _route(chosen, ctx)
-        if not legs:
-            raise HTTPException(409, "Those no longer fit this window.")
-        if sum(e.price for e in chosen) > ctx.budget_left:
-            raise HTTPException(409, "That goes over your remaining budget.")
-        for exp, leg in zip(chosen, legs):
-            it = ItineraryItem(itinerary_id=itinerary_id, type="suggested", status="confirmed", experience_id=exp.id,
-                               title=exp.title, location_key=exp.location.get("key"),
-                               start_time=at(itin.trip_date, leg["start"]), end_time=at(itin.trip_date, leg["end"]),
-                               slot_start=gap.start_time, slot_end=gap.end_time, price_paid=exp.price)
-            db.add(it)
-            created.append(it)
-        if len(chosen) > 1 and sess:
-            db.add(Bundle(session_id=sess.id, experience_ids=[e.id for e in chosen], total_price=sum(e.price for e in chosen)))
-        for exp in chosen:
-            await bump_demand(db, f"vendor:{exp.vendor_id}", "added")
-    for raw in body.items:
-        if not (raw.start_time and raw.end_time):
-            raise HTTPException(400, "start_time and end_time (HH:MM) required")
-        it = ItineraryItem(itinerary_id=itinerary_id, type=raw.type, status="confirmed", title=raw.title,
-                           experience_id=raw.experience_id, location_key=raw.location_key,
-                           start_time=at(itin.trip_date, hhmm_to_min(raw.start_time)),
-                           end_time=at(itin.trip_date, hhmm_to_min(raw.end_time)))
-        db.add(it)
-        created.append(it)
+    prefs = body.model_dump(exclude={"customer_id", "name", "title", "start_date"})
+    start = body.start_date or (st.demo_date + timedelta(days=21))
+    res = P.plan(prefs, start, st.rain)
+    count = (await db.execute(select(func.count(Tour.id)))).scalar() or 0
+    names = [P.W["dests"][s["dest"]]["name"] for s in res["route"]]
+    tour = Tour(code=f"TC-{2601 + count}", title=body.title or f"{' · '.join(names)} — {res['ctx']['days']} days", customer_id=cust.id,
+                start_date=start, days=res["ctx"]["days"], prefs={**prefs, "days": res["ctx"]["days"]}, route=res["route"],
+                group={"name": cust.name, "adults": body.adults, "children": body.children,
+                       "members": [cust.name.split(" ")[0]] + [f"Guest {k + 2}" for k in range(body.adults + body.children - 1)]},
+                notes=res["warnings"] + res["notes"], checklist={})
+    db.add(tour)
     await db.flush()
-    ids = [c.id for c in created]
-    await recompute_gaps(db, itinerary_id)
+    from .services import new_row
+    for i in res["items"]:
+        await new_row(db, tour, i, False)
+    st.active_tour_id = tour.id
     await db.commit()
-    await notify_itinerary(itinerary_id, reason="items_added")
-    return {"created_item_ids": ids, "itinerary": await serialize_itinerary(db, itinerary_id)}
+    await hub.broadcast({"type": "tour_created", "tour_id": tour.id})
+    return await serialize_tour(db, tour, st)
 
 
-# ---------------------------------------------------------------- recommendations
-@app.get("/recommendations")
-async def recommendations(slot_id: int, db: AsyncSession = Depends(get_db)):
-    gap = await db.get(ItineraryItem, slot_id)
-    if not gap or gap.type != "gap":
-        raise HTTPException(404, "slot not found (gaps are recomputed when the itinerary changes)")
-    return await recommend_for_gap(db, gap)
-
-
-@app.get("/experiences")
-async def list_experiences(vendor_id: int | None = None, db: AsyncSession = Depends(get_db)):
-    q = select(Experience).order_by(Experience.id)
-    if vendor_id:
-        q = q.where(Experience.vendor_id == vendor_id)
-    exps = (await db.execute(q)).scalars().all()
-    vendors = {v.id: v for v in (await db.execute(select(Vendor))).scalars()}
-    return [serialize_exp(e, vendors.get(e.vendor_id)) for e in exps]
-
-
-@app.get("/experiences/{experience_id}")
-async def get_experience(experience_id: int, db: AsyncSession = Depends(get_db)):
-    exp = await db.get(Experience, experience_id)
-    if not exp:
-        raise HTTPException(404, "experience not found")
-    vendor = await db.get(Vendor, exp.vendor_id)
-    reviews = (await db.execute(select(Review).where(Review.experience_id == exp.id).order_by(Review.created_at.desc()))).scalars().all()
-    now = datetime.now()
-    return {**serialize_exp(exp, vendor),
-            "reviews": [{"rating": r.rating, "text": r.text, "days_ago": (now - r.created_at).days} for r in reviews]}
-
-
-@app.post("/experiences/{experience_id}/reviews")
-async def add_review(experience_id: int, body: ReviewIn, db: AsyncSession = Depends(get_db)):
-    db.add(Review(experience_id=experience_id, rating=max(1, min(5, body.rating)), text=body.text, created_at=datetime.now()))
-    await db.flush()
-    await refresh_trust(db, experience_id)
-    await db.commit()
-    exp = await db.get(Experience, experience_id)
-    return {"trust_score": exp.trust_score, "trust_meta": exp.trust_meta}
-
-
-# ---------------------------------------------------------------- disruptions
-@app.post("/disruption/trigger")
-async def disruption_trigger(body: TriggerIn, db: AsyncSession = Depends(get_db)):
-    itinerary_id = body.itinerary_id or await active_itinerary_id(db)
+@app.get("/tours")
+async def tours(stage_filter: str | None = None, db: AsyncSession = Depends(get_db)):
     st = await get_state(db)
-    note = None
-    if body.trigger_type == "unavailable":
-        if body.experience_id:
-            exp = await db.get(Experience, body.experience_id)
-            if not exp:
-                raise HTTPException(404, "experience not found")
-            exp.capacity_left = 0
-        elif body.vendor_id:
-            v = await db.get(Vendor, body.vendor_id)
-            if not v:
-                raise HTTPException(404, "vendor not found")
-            v.status = "closed"
-        else:
-            raise HTTPException(400, "experience_id or vendor_id required")
-        await db.flush()
-        events = await scan_unavailable(db, itinerary_id)
-        await hub.broadcast({"type": "vendor_status", "vendor_id": body.vendor_id, "experience_id": body.experience_id})
-    elif body.trigger_type == "weather":
-        st.weather_bad = (not st.weather_bad) if body.weather_bad is None else body.weather_bad
-        await db.flush()
-        events = await scan_weather(db, itinerary_id) if st.weather_bad else []
-        await hub.broadcast({"type": "weather", "weather_bad": st.weather_bad})
-    elif body.trigger_type == "time_shrink":
-        res = await trigger_running_late(db, itinerary_id, body.minutes, body.itinerary_item_id)
-        events, note = res["events"], res["note"]
-    elif body.trigger_type == "budget_shrink":
-        if body.new_budget is None:
-            raise HTTPException(400, "new_budget required")
-        events = await trigger_budget(db, itinerary_id, body.new_budget)
-        if not events:
-            note = "Budget updated — everything already planned still fits."
+    out = [await serialize_tour(db, t, st, full=False) for t in (await db.execute(select(Tour).order_by(Tour.start_date))).scalars()]
+    return [t for t in out if not stage_filter or t["stage"] == stage_filter]
+
+
+@app.get("/tours/{tour_id}")
+async def tour_detail(tour_id: int, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    return await serialize_tour(db, await tour_or_404(db, tour_id), st)
+
+
+@app.post("/tours/{tour_id}/activate")
+async def activate(tour_id: int, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    await tour_or_404(db, tour_id)
+    st.active_tour_id = tour_id
+    await db.commit()
+    await tour_changed(tour_id, reason="activated")
+    return {"active_tour_id": tour_id}
+
+
+@app.patch("/tours/{tour_id}")
+async def patch_tour(tour_id: int, body: TourPatch, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    if body.coordinator_id is not None:
+        tour.coordinator_id = body.coordinator_id
+    if body.title:
+        tour.title = body.title
+    if body.status in ("cancelled",):
+        tour.status = body.status
+    if body.prefs:
+        if tour.status != "draft":
+            raise HTTPException(400, "Booked tours change through the Adapt flow.")
+        tour.prefs = {**tour.prefs, **body.prefs}
+    if body.regenerate:
+        await customize.regenerate(db, tour)
+    await db.commit()
+    await tour_changed(tour_id)
+    return await serialize_tour(db, tour, await get_state(db))
+
+
+@app.get("/tours/{tour_id}/items/{item_id}/alternatives")
+async def alternatives(tour_id: int, item_id: int, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    tour = await tour_or_404(db, tour_id)
+    items = [item_dict(r) for r in await load_items(db, tour_id)]
+    it = next((i for i in items if i["id"] == item_id), None)
+    if not it:
+        raise HTTPException(404, "Unknown item")
+    ctx = ctx_for(tour, st)
+    if it["kind"] == "activity":
+        alts = P.activity_alternatives(items, it, ctx, limit=8)
+    elif it["kind"] == "hotel":
+        alts = P.hotel_alternatives(it, ctx)
     else:
-        raise HTTPException(400, "unknown trigger_type")
-    await db.commit()
-    await notify_events(db, events)
-    await notify_itinerary(itinerary_id, reason=body.trigger_type, note=note)
-    return {"events": [await serialize_event(db, e, refresh=False) for e in events], "note": note,
-            "weather_bad": st.weather_bad}
+        alts = P.transport_alternatives(items, it, ctx)
+    cur = P.off(it["offering_id"])
+    return {"item": ser_item(tour, it, st), "current": ser_offering(cur, brief=True),
+            "alternatives": [{"offering": ser_offering(a["offering"], brief=True), "price": a["price"], "delta": a["delta"],
+                              "delta_gross": round(P.gross(a["delta"])), "reason": a["reason"], "score": a["score"],
+                              "start_label": P.label(a["start_min"]) if "start_min" in a else None,
+                              "end_label": P.label(a["end_min"]) if "end_min" in a else None,
+                              "mode": a.get("quote", {}).get("mode"), "arrive_label": P.label(a["quote"]["arrive"]) if a.get("quote") else None,
+                              "duration_min": a["quote"]["duration"] if a.get("quote") else None, "clashes": a.get("clashes", [])}
+                             for a in alts]}
 
 
-@app.get("/disruption/pending")
-async def disruption_pending(itinerary_id: int | None = None, db: AsyncSession = Depends(get_db)):
-    """Polling fallback for clients without a WebSocket."""
-    itinerary_id = itinerary_id or await active_itinerary_id(db)
-    evs = (await db.execute(select(DisruptionEvent).join(ItineraryItem, ItineraryItem.id == DisruptionEvent.itinerary_item_id)
-                            .where(ItineraryItem.itinerary_id == itinerary_id, DisruptionEvent.resolution_status == "pending")
-                            .order_by(DisruptionEvent.id.desc()))).scalars().all()
-    out = [await serialize_event(db, e) for e in evs]
-    await db.commit()
-    return out
-
-
-@app.get("/disruption/{event_id}/alternatives")
-async def disruption_alternatives(event_id: int, db: AsyncSession = Depends(get_db)):
-    ev = await db.get(DisruptionEvent, event_id)
-    if not ev:
-        raise HTTPException(404, "event not found")
-    out = await serialize_event(db, ev)
-    await db.commit()
-    return out
-
-
-@app.post("/disruption/{event_id}/resolve")
-async def disruption_resolve(event_id: int, body: ResolveIn, db: AsyncSession = Depends(get_db)):
-    ev = await db.get(DisruptionEvent, event_id)
-    if not ev:
-        raise HTTPException(404, "event not found")
-    if ev.resolution_status != "pending":
-        raise HTTPException(409, f"already {ev.resolution_status}")
-    if body.action not in ("accept", "dismiss"):
-        raise HTTPException(400, "action must be accept or dismiss")
-    item = await db.get(ItineraryItem, ev.itinerary_item_id)
+async def _custom(db, tour_id, fn):
+    tour = await tour_or_404(db, tour_id)
     try:
-        result = await resolve(db, ev, body.action, body.choice)
-    except ValueError as e:
-        raise HTTPException(409, str(e))
-    await hub.broadcast({"type": "disruption_resolved", "event_id": ev.id, "action": body.action})
-    await notify_itinerary(item.itinerary_id, reason="resolved")
-    return result
+        out = await fn(tour)
+    except customize.CustomizeError as e:
+        raise HTTPException(400, str(e))
+    await db.commit()
+    await tour_changed(tour_id)
+    return {"result": out, "tour": await serialize_tour(db, tour, await get_state(db))}
+
+
+@app.post("/tours/{tour_id}/items/{item_id}/swap")
+async def swap_item(tour_id: int, item_id: int, body: SwapIn, db: AsyncSession = Depends(get_db)):
+    return await _custom(db, tour_id, lambda t: customize.swap(db, t, item_id, body.offering_id, body.mode))
+
+
+@app.delete("/tours/{tour_id}/items/{item_id}")
+async def remove_item(tour_id: int, item_id: int, db: AsyncSession = Depends(get_db)):
+    return await _custom(db, tour_id, lambda t: customize.remove(db, t, item_id))
+
+
+@app.post("/tours/{tour_id}/items")
+async def add_item(tour_id: int, body: AddIn, db: AsyncSession = Depends(get_db)):
+    return await _custom(db, tour_id, lambda t: customize.add(db, t, body.offering_id, body.day))
+
+
+@app.post("/tours/{tour_id}/optimise")
+async def optimise(tour_id: int, db: AsyncSession = Depends(get_db)):
+    return await _custom(db, tour_id, lambda t: customize.optimise(db, t))
+
+
+@app.post("/tours/{tour_id}/book")
+async def book(tour_id: int, body: BookIn, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    tour = await tour_or_404(db, tour_id)
+    if tour.status != "draft":
+        raise HTTPException(400, "Tour is already booked.")
+    items = [item_dict(r) for r in await load_items(db, tour_id)]
+    errors = [c for c in P.conflicts(items, ctx_for(tour, st)) if c["level"] == "error"]
+    if errors:
+        raise HTTPException(400, "Fix these first: " + " ".join(e["text"] for e in errors[:3]))
+    out = await book_tour(db, tour, body.pay, body.method)
+    db.add(ChatMessage(tour_id=tour.id, role="assistant", text=f"🎉 {tour.title} is booked! I'll keep an eye on every connection and warn you early if anything is at risk."))
+    await db.commit()
+    await tour_changed(tour_id, reason="booked")
+    await hub.broadcast({"type": "bookings", "tour_id": tour_id})
+    return out | {"tour": await serialize_tour(db, tour, st)}
+
+
+@app.post("/tours/{tour_id}/payments")
+async def pay(tour_id: int, body: PaymentIn, db: AsyncSession = Depends(get_db)):
+    await tour_or_404(db, tour_id)
+    db.add(Payment(tour_id=tour_id, amount=body.amount, method=body.method, kind=body.kind, note=body.note or ("Refund" if body.kind == "refund" else "Payment")))
+    await db.commit()
+    await tour_changed(tour_id, reason="payment")
+    return {"ok": True}
+
+
+@app.post("/tours/{tour_id}/checklist")
+async def check(tour_id: int, body: ChecklistIn, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    tour.checklist = {**(tour.checklist or {}), body.key: body.done}
+    await db.commit()
+    return {"ok": True}
+
+
+@app.post("/tours/{tour_id}/review")
+async def review(tour_id: int, body: ReviewIn, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    cust = await db.get(Customer, tour.customer_id)
+    for r in body.items:
+        row = await db.get(TourItem, r["item_id"])
+        if row and row.tour_id == tour_id and row.offering_id and r.get("rating"):
+            row.rating = int(r["rating"])
+            db.add(Review(offering_id=row.offering_id, tour_id=tour_id, author=cust.name.split(" ")[0], rating=int(r["rating"]), text=r.get("text", "")))
+    tour.review = {"overall": body.overall, "text": body.text, "at": datetime.utcnow().isoformat()}
+    tour.status = "reviewed"
+    await db.commit()
+    await P.load_world(db)
+    await tour_changed(tour_id, reason="reviewed")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- adapt
+@app.post("/changes/trigger")
+async def trigger(body: TriggerIn, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    events, note = await run_trigger(db, body.model_dump(), st.active_tour_id)
+    await db.commit()
+    await P.load_world(db)
+    await after_events(db, events)
+    await hub.broadcast({"type": "world", "trigger": body.trigger_type})
+    return {"events": [await ser_event(db, e) for e in events], "note": note}
+
+
+@app.get("/changes")
+async def changes(tour_id: int | None = None, status: str | None = None, db: AsyncSession = Depends(get_db)):
+    q = select(ChangeEvent).order_by(ChangeEvent.created_at.desc())
+    if tour_id:
+        q = q.where(ChangeEvent.tour_id == tour_id)
+    if status:
+        q = q.where(ChangeEvent.status == status)
+    return [await ser_event(db, e) for e in (await db.execute(q)).scalars()]
+
+
+@app.get("/changes/{eid}")
+async def change(eid: int, db: AsyncSession = Depends(get_db)):
+    e = await db.get(ChangeEvent, eid)
+    if not e:
+        raise HTTPException(404, "Unknown change")
+    return await ser_event(db, e)
+
+
+@app.post("/changes/{eid}/resolve")
+async def resolve(eid: int, body: ResolveIn, db: AsyncSession = Depends(get_db)):
+    e = await db.get(ChangeEvent, eid)
+    if not e:
+        raise HTTPException(404, "Unknown change")
+    if e.status != "pending":
+        raise HTTPException(409, f"Already {e.status} by {e.resolved_by}.")
+    try:
+        out = await resolve_event(db, e, body.action, body.option, body.by)
+    except ValueError as err:
+        raise HTTPException(400, str(err))
+    await db.commit()
+    await hub.broadcast({"type": "change_resolved", "tour_id": e.tour_id, "event_id": e.id, "action": body.action, "by": body.by,
+                         "option": e.chosen})
+    await tour_changed(e.tour_id, reason="change")
+    return out | {"event": await ser_event(db, e)}
+
+
+# ---------------------------------------------------------------- assist
+@app.get("/tours/{tour_id}/chat")
+async def chat_history(tour_id: int, db: AsyncSession = Depends(get_db)):
+    msgs = (await db.execute(select(ChatMessage).where(ChatMessage.tour_id == tour_id).order_by(ChatMessage.created_at, ChatMessage.id))).scalars().all()
+    return [{"id": m.id, "role": m.role, "text": m.text, "data": m.data, "at": m.created_at.isoformat()} for m in msgs]
+
+
+@app.post("/tours/{tour_id}/chat")
+async def chat(tour_id: int, body: ChatIn, db: AsyncSession = Depends(get_db)):
+    tour = await tour_or_404(db, tour_id)
+    db.add(ChatMessage(tour_id=tour_id, role="user", text=body.text))
+    try:
+        reply, data = await assist.handle(db, tour, body.text)
+    except customize.CustomizeError as e:
+        reply, data = str(e), {}
+    m = ChatMessage(tour_id=tour_id, role="assistant", text=reply, data=data)
+    db.add(m)
+    await db.commit()
+    evs = [await db.get(ChangeEvent, i) for i in data.get("events", [])]
+    await after_events(db, [e for e in evs if e])
+    await tour_changed(tour_id, reason="chat")
+    return {"reply": reply, "data": data}
 
 
 # ---------------------------------------------------------------- vendors
 @app.get("/vendors")
-async def list_vendors(db: AsyncSession = Depends(get_db)):
-    vendors = (await db.execute(select(Vendor).order_by(Vendor.id))).scalars().all()
-    return [{"id": v.id, "name": v.name, "status": v.status, "contact_channel": v.contact_channel,
-             "onboarding_source": v.onboarding_source} for v in vendors]
-
-
-@app.get("/vendor/{vendor_id}")
-async def get_vendor(vendor_id: int, db: AsyncSession = Depends(get_db)):
-    v = await db.get(Vendor, vendor_id)
-    if not v:
-        raise HTTPException(404, "vendor not found")
-    exps = (await db.execute(select(Experience).where(Experience.vendor_id == vendor_id))).scalars().all()
-    return {"id": v.id, "name": v.name, "status": v.status, "contact_channel": v.contact_channel,
-            "onboarding_source": v.onboarding_source, "listings": [serialize_exp(e) for e in exps]}
-
-
-ONBOARD_QUESTIONS = [
-    "Hi! 👋 I'm the GapFill helper. What's your business called, and what experience do you offer?",
-    "Where does it happen? A landmark or area is perfect (e.g. near Hawa Mahal, MI Road).",
-    "How long does it take, what do you charge per person, and how many guests can you take per session?",
-    "What hours can guests join? And is it indoors, outdoors, or both?",
-    "Last one: who is it great for (solo, couples, families, big groups)? Any access details — step-free entry, seating, restroom, a quiet/sensory-friendly space?",
-]
-
-
-@app.get("/vendor/onboard/questions")
-async def onboard_questions():
-    return {"questions": ONBOARD_QUESTIONS}
-
-
-@app.post("/vendor/onboard")
-async def vendor_onboard(body: OnboardIn):
-    draft, source = await nlp.extract_listing(body.answers, body.questions or ONBOARD_QUESTIONS)
-    return {"draft": draft, "source": source}
-
-
-@app.post("/vendor/listings")
-async def vendor_publish(body: PublishIn, db: AsyncSession = Depends(get_db)):
-    d = body.draft
-    vendor = await db.get(Vendor, body.vendor_id) if body.vendor_id else None
-    if not vendor:
-        vendor = Vendor(name=body.vendor_name or d.get("vendor_name") or "New local host", contact_channel="whatsapp (demo)",
-                        status="open", onboarding_source="chat")
-        db.add(vendor)
-        await db.flush()
-    exp = Experience(
-        vendor_id=vendor.id, title=d["title"], description=d.get("description", ""), category_tags=d.get("category_tags", []),
-        price=float(d["price"]), duration_min=int(d["duration_min"]), location=d.get("location") or loc_of("mi_road"),
-        accessibility_attributes=d.get("accessibility_attributes", {}), group_suitability=d.get("group_suitability", []),
-        opening_hours=d.get("opening_hours", {}), indoor_outdoor=d.get("indoor_outdoor", "indoor"),
-        capacity_left=int(d.get("capacity_left", 10)), trust_score=3.5,
-        trust_meta={"count": 0, "recent_90d": 0, "plain_avg": None, "summary": "New listing, no reviews yet"})
-    db.add(exp)
-    await db.commit()
-    await hub.broadcast({"type": "listing_published", "vendor_id": vendor.id, "experience_id": exp.id})
-    await notify_itinerary(0, reason="new_listing")
-    return {"vendor_id": vendor.id, "experience": serialize_exp(exp, vendor)}
-
-
-@app.patch("/vendor/{vendor_id}/status")
-async def vendor_status(vendor_id: int, body: VendorStatusIn, db: AsyncSession = Depends(get_db)):
-    v = await db.get(Vendor, vendor_id)
-    if not v:
-        raise HTTPException(404, "vendor not found")
-    exps = (await db.execute(select(Experience).where(Experience.vendor_id == vendor_id))).scalars().all()
-    targets = [e for e in exps if e.id == body.experience_id] if body.experience_id else exps
-    if body.status in ("open", "closed", "full"):
-        if body.experience_id and body.status != "open":
-            for e in targets:
-                e.capacity_left = 0
-        else:
-            v.status = body.status
-            if body.status == "open":
-                for e in targets:
-                    e.capacity_left = max(e.capacity_left, 10)
-    elif body.status == "slots":
-        if body.slots_left is None:
-            raise HTTPException(400, "slots_left required")
-        v.status = "open"
-        for e in targets:
-            e.capacity_left = body.slots_left
-    else:
-        raise HTTPException(400, "status must be open, closed, full or slots")
-    await db.flush()
-    st = await get_state(db)
-    events = await scan_unavailable(db, st.active_itinerary_id) if st.active_itinerary_id else []
-    await db.commit()
-    await hub.broadcast({"type": "vendor_status", "vendor_id": v.id, "status": v.status,
-                         "listings": [{"id": e.id, "capacity_left": e.capacity_left} for e in exps]})
-    await notify_events(db, events)
-    if st.active_itinerary_id:
-        await notify_itinerary(st.active_itinerary_id, reason="vendor_status")
-    return {"id": v.id, "status": v.status, "listings": [serialize_exp(e) for e in exps],
-            "disruptions_created": [e.id for e in events]}
-
-
-@app.get("/vendor/{vendor_id}/demand-signals")
-async def demand_signals(vendor_id: int, db: AsyncSession = Depends(get_db)):
-    v = await db.get(Vendor, vendor_id)
-    if not v:
-        raise HTTPException(404, "vendor not found")
-    exps = (await db.execute(select(Experience).where(Experience.vendor_id == vendor_id))).scalars().all()
-    areas = sorted({e.location.get("key") for e in exps if e.location})
-    my_tags = {t for e in exps for t in e.category_tags}
-    today = date.today()
-    rows = (await db.execute(select(DemandSignal).where(DemandSignal.date == today))).scalars().all()
-    nearby = {}
-    for r in rows:
-        if r.vendor_id_or_area in {f"area:{a}" for a in areas}:
-            key = (r.vendor_id_or_area.split(":", 1)[1], r.query_tag)
-            nearby[key] = nearby.get(key, 0) + r.count
-    own = {r.query_tag: r.count for r in rows if r.vendor_id_or_area == f"vendor:{vendor_id}"}
-    top = sorted(({"area": LOCATIONS.get(a, (a,))[0], "area_key": a, "tag": t, "count": c, "matches_you": t in my_tags}
-                  for (a, t), c in nearby.items()), key=lambda x: -x["count"])[:8]
-    insights = [f"{x['count']} travelers near {x['area']} asked for {x['tag']} today" for x in top[:3]]
-    return {"vendor_id": vendor_id, "date": today.isoformat(), "areas": areas, "nearby": top,
-            "own": {"shown": own.get("shown", 0), "added": own.get("added", 0), "booked": own.get("booked", 0)},
-            "insights": insights}
-
-
-# ---------------------------------------------------------------- booking (mock)
-@app.post("/booking/confirm")
-async def booking_confirm(body: BookingIn, db: AsyncSession = Depends(get_db)):
+async def vendors(kind: str | None = None, db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(TourItem).where(TourItem.vendor_id.is_not(None), TourItem.status.in_(["booked", "disrupted"])))).scalars().all()
     out = []
-    total = 0.0
-    group = "solo"
-    for iid in body.itinerary_item_ids:
-        it = await db.get(ItineraryItem, iid)
-        if not it or not it.experience_id:
-            raise HTTPException(404, f"item {iid} not found")
-        exp = await db.get(Experience, it.experience_id)
-        itin = await db.get(Itinerary, it.itinerary_id)
-        user = await db.get(User, itin.user_id)
-        group = user.group_type
-        if not it.booking_ref:
-            it.booking_ref = booking_ref()
-            exp.capacity_left = max(0, exp.capacity_left - HEADCOUNT.get(group, 1))
-            await bump_demand(db, f"vendor:{exp.vendor_id}", "booked")
-        vendor = await db.get(Vendor, exp.vendor_id)
-        people = HEADCOUNT.get(group, 1)
-        total += exp.price * people
-        out.append({"item_id": it.id, "booking_ref": it.booking_ref, "title": exp.title, "vendor": vendor.name,
-                    "start_time": it.start_time.isoformat(), "end_time": it.end_time.isoformat(),
-                    "location": exp.location, "price_per_person": exp.price, "people": people})
+    for v in P.W["vendors"].values():
+        if kind and v["kind"] != kind:
+            continue
+        mine = [r for r in rows if r.vendor_id == v["id"]]
+        offs = [o for o in P.W["offerings"].values() if o["vendor_id"] == v["id"]]
+        out.append({**{k: v[k] for k in ("id", "name", "kind", "dest_key", "phone", "status", "commission_pct")},
+                    "dest_name": P.W["dests"].get(v["dest_key"], {}).get("name") if v["dest_key"] else "All routes",
+                    "offerings": len(offs), "rating": round(sum(o["rating"] for o in offs) / len(offs), 2) if offs else None,
+                    "bookings": len(mine), "pending": sum(1 for r in mine if r.vendor_status == "pending"),
+                    "revenue": sum(r.price for r in mine)})
+    return sorted(out, key=lambda v: (-v["bookings"], v["name"]))
+
+
+@app.get("/vendors/{vid}")
+async def vendor(vid: int, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    v = P.W["vendors"].get(vid)
+    if not v:
+        raise HTTPException(404, "Unknown vendor")
+    rows = (await db.execute(select(TourItem).where(TourItem.vendor_id == vid).order_by(TourItem.id.desc()))).scalars().all()
+    tours = {t.id: t for t in (await db.execute(select(Tour))).scalars()}
+    custs = {c.id: c for c in (await db.execute(select(Customer))).scalars()}
+    bookings = []
+    for r in rows:
+        t = tours.get(r.tour_id)
+        if not t or not r.booking_ref:
+            continue
+        i = ser_item(t, item_dict(r), st)
+        bookings.append(i | {"tour_code": t.code, "customer": custs[t.customer_id].name, "travelers": (t.group or {}).get("adults", 0) + (t.group or {}).get("children", 0)})
+    tasks = (await db.execute(select(Task).where(Task.vendor_id == vid).order_by(Task.created_at.desc()).limit(20))).scalars().all()
+    return {**v, "dest_name": P.W["dests"].get(v["dest_key"], {}).get("name") if v["dest_key"] else "All routes",
+            "offerings": [ser_offering(o) for o in P.W["offerings"].values() if o["vendor_id"] == vid],
+            "requests": [b for b in bookings if b["vendor_status"] == "pending" and b["status"] in ("booked", "disrupted") and not b["is_past"]],
+            "upcoming": [b for b in bookings if b["vendor_status"] == "confirmed" and b["status"] in ("booked", "disrupted") and not b["is_past"]],
+            "cancelled": [b for b in bookings if b["status"] in ("replaced", "cancelled")][:8],
+            "notifications": [{"id": t.id, "kind": t.kind, "text": t.text, "status": t.status, "at": t.created_at.isoformat()} for t in tasks],
+            "stats": {"bookings": sum(1 for b in bookings if b["status"] in ("booked", "disrupted")),
+                      "revenue": sum(b["price"] for b in bookings if b["status"] in ("booked", "disrupted")),
+                      "rating": round(sum(o["rating"] for o in P.W["offerings"].values() if o["vendor_id"] == vid) / max(1, sum(1 for o in P.W["offerings"].values() if o["vendor_id"] == vid)), 2)}}
+
+
+@app.patch("/vendors/{vid}/status")
+async def vendor_status(vid: int, body: VendorStatusIn, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    events, note = [], None
+    if body.status in ("closed", "full"):
+        payload = {"trigger_type": "unavailable", "source": "vendor"} | ({"offering_id": body.offering_id} if body.offering_id else {"vendor_id": vid})
+        events, note = await run_trigger(db, payload, st.active_tour_id)
+        if body.offering_id and body.status == "full":
+            (await db.get(Offering, body.offering_id)).status = "full"
+    else:
+        v = await db.get(Vendor, vid)
+        v.status = "open"
+        q = select(Offering).where(Offering.vendor_id == vid)
+        if body.offering_id:
+            q = q.where(Offering.id == body.offering_id)
+        for o in (await db.execute(q)).scalars():
+            o.status = "open"
     await db.commit()
-    return {"status": "confirmed", "payment": "mock — no payment taken", "bookings": out, "total": total,
-            "group_type": group}
+    await P.load_world(db)
+    await after_events(db, events)
+    await hub.broadcast({"type": "vendor_status", "vendor_id": vid, "status": body.status})
+    return {"events": len(events), "note": note}
 
 
-# ---------------------------------------------------------------- websocket
+@app.post("/vendors/{vid}/bookings/{item_id}")
+async def vendor_booking(vid: int, item_id: int, body: VendorBookingIn, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    r = await db.get(TourItem, item_id)
+    if not r or r.vendor_id != vid:
+        raise HTTPException(404, "Unknown booking")
+    events = []
+    if body.action == "confirm":
+        r.vendor_status = "confirmed"
+        for t in (await db.execute(select(Task).where(Task.vendor_id == vid, Task.status == "open"))).scalars():
+            if r.booking_ref and r.booking_ref in t.text:
+                t.status = "done"
+    else:
+        events, _ = await run_trigger(db, {"trigger_type": "vendor_declined", "item_id": item_id, "source": "vendor"}, st.active_tour_id)
+    await db.commit()
+    await after_events(db, events)
+    await tour_changed(r.tour_id, reason="vendor")
+    await hub.broadcast({"type": "vendor_status", "vendor_id": vid})
+    return {"ok": True, "events": len(events)}
+
+
+# ---------------------------------------------------------------- operator
+@app.get("/operator/dashboard")
+async def dashboard(db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    tours = list((await db.execute(select(Tour))).scalars())
+    sers = [await serialize_tour(db, t, st, full=False) for t in tours]
+    booked = [s for s in sers if s["status"] in ("booked", "reviewed")]
+    pipeline = {k: sum(1 for s in sers if s["stage"] == k) for k in ("plan", "prepare", "operate", "complete", "review")}
+    items = (await db.execute(select(TourItem).where(TourItem.status.in_(["booked", "disrupted"])))).scalars().all()
+    dest_nights: dict = {}
+    for t in tours:
+        if t.status == "draft":
+            continue
+        for s in t.route or []:
+            dest_nights[s["dest"]] = dest_nights.get(s["dest"], 0) + s["nights"]
+    interests: dict = {}
+    for t in tours:
+        for i in (t.prefs or {}).get("interests", []):
+            interests[i] = interests.get(i, 0) + 1
+    by_kind = {k: sum(r.price for r in items if r.kind == k) for k in ("hotel", "transport", "activity")}
+    vendor_use: dict = {}
+    for r in items:
+        if r.vendor_id:
+            vendor_use[r.vendor_id] = vendor_use.get(r.vendor_id, 0) + 1
+    pending = (await db.execute(select(ChangeEvent).where(ChangeEvent.status == "pending").order_by(ChangeEvent.created_at.desc()))).scalars().all()
+    resolved = (await db.execute(select(ChangeEvent).where(ChangeEvent.status != "pending"))).scalars().all()
+    open_tasks = (await db.execute(select(func.count(Task.id)).where(Task.status == "open"))).scalar()
+    alerts = []
+    for t in tours:
+        if t.status != "booked":
+            continue
+        full = await serialize_tour(db, t, st)
+        for r in full["risks"]:
+            alerts.append({**r, "tour_id": t.id, "tour_code": t.code, "customer": full["customer"]["name"]})
+    reviews = [t.review["overall"] for t in tours if t.review]
+    today_ops = sum(1 for s in sers if s["stage"] == "operate")
+    return {
+        "kpis": {"active_tours": today_ops, "travelers_on_tour": sum(s["travelers"] for s in sers if s["stage"] == "operate"),
+                 "upcoming": pipeline["prepare"], "drafts": pipeline["plan"],
+                 "revenue": sum(s["pricing"]["total"] for s in booked), "collected": sum(s["payments"]["net_paid"] for s in booked),
+                 "outstanding": sum(max(0, s["payments"]["balance"]) for s in booked if s["status"] == "booked"),
+                 "margin": sum(s["pricing"]["service_fee"] for s in booked),
+                 "pending_confirmations": sum(s["confirmations"]["pending"] for s in sers),
+                 "open_changes": len(pending), "open_tasks": open_tasks, "avg_rating": round(sum(reviews) / len(reviews), 1) if reviews else None,
+                 "changes_resolved": len(resolved)},
+        "pipeline": pipeline, "alerts": alerts[:12],
+        "pending_changes": [await ser_event(db, e) for e in pending[:8]],
+        "analytics": {
+            "revenue_mix": by_kind,
+            "destinations": sorted([{"key": k, "name": P.W["dests"][k]["name"], "nights": n} for k, n in dest_nights.items()], key=lambda x: -x["nights"]),
+            "interests": sorted([{"tag": k, "count": v} for k, v in interests.items()], key=lambda x: -x["count"]),
+            "top_vendors": sorted([{"id": k, "name": P.W["vendors"][k]["name"], "kind": P.W["vendors"][k]["kind"], "bookings": v}
+                                   for k, v in vendor_use.items()], key=lambda x: -x["bookings"])[:6],
+        },
+        "tours": sorted(sers, key=lambda s: ["operate", "prepare", "plan", "complete", "review", "cancelled"].index(s["stage"])),
+        "demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time,
+    }
+
+
+@app.get("/operator/schedule")
+async def schedule(day: date | None = None, db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    day = day or st.demo_date
+    out = []
+    for t in (await db.execute(select(Tour).where(Tour.status == "booked"))).scalars():
+        d = (day - t.start_date).days + 1
+        if not 1 <= d <= t.days:
+            continue
+        cust = await db.get(Customer, t.customer_id)
+        coord = await db.get(Coordinator, t.coordinator_id) if t.coordinator_id else None
+        rows = [item_dict(r) for r in await load_items(db, t.id)]
+        ctx = ctx_for(t, st)
+        items = [ser_item(t, i, st) for i in rows if i["day"] == d and P.live(i) and i["kind"] != "fee"]
+        stay = next((i for i in rows if i["kind"] == "hotel" and P.live(i) and i["day"] <= d < i["day"] + i["nights"]), None)
+        out.append({"tour_id": t.id, "code": t.code, "title": t.title, "customer": cust.name, "day": d, "days": t.days,
+                    "dest": P.W["dests"][P.dest_for_day(ctx, d)]["name"], "travelers": ctx["travelers"],
+                    "coordinator": coord.name if coord else None, "stay": stay["title"] if stay else None,
+                    "rain": P.rain_on(ctx, P.dest_for_day(ctx, d), d), "items": items})
+    return {"date": day.isoformat(), "now": st.demo_time, "tours": out}
+
+
+@app.get("/operator/people")
+async def people(db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    tours = list((await db.execute(select(Tour))).scalars())
+    sers = {t.id: await serialize_tour(db, t, st, full=False) for t in tours}
+    customers = []
+    for c in (await db.execute(select(Customer))).scalars():
+        mine = [sers[t.id] for t in tours if t.customer_id == c.id]
+        if not mine:
+            continue
+        customers.append({"id": c.id, "name": c.name, "email": c.email, "phone": c.phone, "city": c.city, "segment": c.segment,
+                          "interests": c.interests, "tours": [{"id": s["id"], "code": s["code"], "title": s["title"], "stage": s["stage"]} for s in mine],
+                          "lifetime_value": sum(s["pricing"]["total"] for s in mine if s["status"] != "draft")})
+    coords = []
+    for c in (await db.execute(select(Coordinator))).scalars():
+        mine = [sers[t.id] for t in tours if t.coordinator_id == c.id and t.status == "booked"]
+        open_tasks = (await db.execute(select(func.count(Task.id)).where(Task.coordinator_id == c.id, Task.status == "open"))).scalar()
+        coords.append({"id": c.id, "name": c.name, "phone": c.phone, "base": P.W["dests"][c.base]["name"], "languages": c.languages,
+                       "tours": [{"id": s["id"], "code": s["code"], "title": s["title"], "stage": s["stage"]} for s in mine],
+                       "on_tour_now": sum(1 for s in mine if s["stage"] == "operate"), "open_tasks": open_tasks})
+    groups = [{"tour_id": s["id"], "code": s["code"], "title": s["title"], "stage": s["stage"], **(s["group"] or {})} for s in sers.values()]
+    return {"customers": customers, "coordinators": coords, "groups": groups}
+
+
+@app.get("/operator/payments")
+async def payments(db: AsyncSession = Depends(get_db)):
+    st = await get_state(db)
+    tours = {t.id: t for t in (await db.execute(select(Tour))).scalars()}
+    ps = (await db.execute(select(Payment).order_by(Payment.created_at.desc()))).scalars().all()
+    summary = []
+    for t in tours.values():
+        if t.status == "draft":
+            continue
+        s = await serialize_tour(db, t, st, full=False)
+        summary.append({"tour_id": t.id, "code": t.code, "title": t.title, "customer": s["customer"]["name"], "stage": s["stage"],
+                        "total": s["pricing"]["total"], **{k: s["payments"][k] for k in ("net_paid", "balance", "status")}})
+    return {"ledger": [{"id": p.id, "tour_id": p.tour_id, "code": tours[p.tour_id].code, "amount": p.amount, "kind": p.kind,
+                        "method": p.method, "note": p.note, "at": p.created_at.isoformat()} for p in ps],
+            "tours": sorted(summary, key=lambda x: -x["balance"])}
+
+
+@app.get("/operator/tasks")
+async def tasks(status: str = "open", db: AsyncSession = Depends(get_db)):
+    ts = (await db.execute(select(Task).where(Task.status == status).order_by(Task.created_at.desc()).limit(80))).scalars().all()
+    tours = {t.id: t for t in (await db.execute(select(Tour))).scalars()}
+    return [{"id": t.id, "kind": t.kind, "text": t.text, "status": t.status, "tour_id": t.tour_id,
+             "tour_code": tours[t.tour_id].code if t.tour_id in tours else None, "vendor_id": t.vendor_id,
+             "vendor_name": (P.W["vendors"].get(t.vendor_id) or {}).get("name"), "at": t.created_at.isoformat()} for t in ts]
+
+
+@app.post("/operator/tasks/{task_id}/done")
+async def task_done(task_id: int, db: AsyncSession = Depends(get_db)):
+    t = await db.get(Task, task_id)
+    if not t:
+        raise HTTPException(404, "Unknown task")
+    t.status = "done"
+    # completing a vendor confirmation task confirms the booking it names
+    if t.kind == "confirm" and t.tour_id:
+        for r in await load_items(db, t.tour_id):
+            if r.booking_ref and r.booking_ref in t.text and r.vendor_status == "pending":
+                r.vendor_status = "confirmed"
+    await db.commit()
+    await tour_changed(t.tour_id or 0, reason="task")
+    return {"ok": True}
+
+
+@app.get("/coordinators")
+async def coordinators(db: AsyncSession = Depends(get_db)):
+    return [{"id": c.id, "name": c.name, "base": c.base} for c in (await db.execute(select(Coordinator))).scalars()]
+
+
+# ---------------------------------------------------------------- live channel
 @app.websocket("/ws")
-async def ws_endpoint(ws: WebSocket):
-    await hub.connect(ws)
+async def ws(websocket: WebSocket):
+    await hub.connect(websocket)
     try:
-        await ws.send_text(json.dumps({"type": "hello"}))
+        await websocket.send_text(json.dumps({"type": "hello"}))
         while True:
-            msg = await asyncio.wait_for(ws.receive_text(), timeout=60)
+            msg = await websocket.receive_text()
             if msg == "ping":
-                await ws.send_text(json.dumps({"type": "pong"}))
-    except (WebSocketDisconnect, asyncio.TimeoutError, RuntimeError):
-        pass
-    finally:
-        hub.drop(ws)
+                await websocket.send_text(json.dumps({"type": "pong"}))
+    except WebSocketDisconnect:
+        hub.drop(websocket)
+    except Exception:
+        hub.drop(websocket)

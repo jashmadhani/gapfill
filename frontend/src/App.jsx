@@ -1,21 +1,26 @@
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { CalendarDays, House, MonitorPlay, Search, Settings2, Store } from 'lucide-react'
-import { TravelerProvider, useTraveler } from './store'
-import DisruptionCard from './components/DisruptionCard'
+import { Compass, Map, MessageCircle, Plane } from 'lucide-react'
+import { TourProvider, useTour } from './store'
+import ChangeCard from './components/ChangeCard'
 import { cx } from './components/ui'
-import RightNow from './pages/RightNow'
-import Timeline from './pages/Timeline'
+import Discover from './pages/Discover'
+import DestinationDetail from './pages/DestinationDetail'
 import ExperienceDetail from './pages/ExperienceDetail'
-import BundleSummary from './pages/BundleSummary'
-import Ask from './pages/Ask'
+import Personalize from './pages/Personalize'
+import Plan from './pages/Plan'
+import Compare from './pages/Compare'
+import Price from './pages/Price'
 import Booking from './pages/Booking'
-import TripSetup from './pages/TripSetup'
-import VendorChat from './pages/VendorChat'
-import VendorConsole from './pages/VendorConsole'
+import Trip from './pages/Trip'
+import Assist from './pages/Assist'
+import Review from './pages/Review'
+import Tours from './pages/Tours'
+import VendorPortal from './pages/VendorPortal'
 import LiveOps from './pages/LiveOps'
+import OperatorApp from './operator/OperatorApp'
 
 function Toast() {
-  const { toast } = useTraveler()
+  const { toast } = useTour()
   if (!toast) return null
   const tone = { success: 'bg-emerald-600', error: 'bg-red-600', info: 'bg-stone-900' }[toast.tone]
   return (
@@ -26,13 +31,13 @@ function Toast() {
 }
 
 function TravelerShell({ children }) {
-  const { error } = useTraveler()
+  const { error } = useTour()
   const embed = new URLSearchParams(useLocation().search).has('embed')
   const tabs = [
-    { to: '/', label: 'Now', Icon: House, end: true },
-    { to: '/timeline', label: 'Day', Icon: CalendarDays },
-    { to: '/ask', label: 'Ask', Icon: Search },
-    { to: '/trip', label: 'Trip', Icon: Settings2 },
+    { to: '/', label: 'Discover', Icon: Compass, end: true },
+    { to: '/plan', label: 'Plan', Icon: Map },
+    { to: '/trip', label: 'Trip', Icon: Plane },
+    { to: '/assist', label: 'Assist', Icon: MessageCircle },
   ]
   return (
     <div className="mx-auto flex min-h-full max-w-md flex-col bg-sand-50">
@@ -48,21 +53,8 @@ function TravelerShell({ children }) {
           ))}
         </div>
       </nav>
-      <DisruptionCard />
+      <ChangeCard />
       <Toast />
-    </div>
-  )
-}
-
-function Home() {
-  // Small switcher so judges can jump between the three surfaces from the root of the app.
-  return (
-    <div className="mx-auto max-w-md p-4">
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        <NavLink to="/" className="rounded-lg bg-white p-2 text-center ring-1 ring-stone-200">Traveler</NavLink>
-        <NavLink to="/vendor" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><Store size={14} /> Vendor</NavLink>
-        <NavLink to="/ops" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><MonitorPlay size={14} /> Live Ops</NavLink>
-      </div>
     </div>
   )
 }
@@ -70,20 +62,25 @@ function Home() {
 export default function App() {
   const T = (el) => <TravelerShell>{el}</TravelerShell>
   return (
-    <TravelerProvider>
+    <TourProvider>
       <Routes>
-        <Route path="/" element={T(<RightNow />)} />
-        <Route path="/timeline" element={T(<Timeline />)} />
+        <Route path="/" element={T(<Discover />)} />
+        <Route path="/destination/:key" element={T(<DestinationDetail />)} />
         <Route path="/experience/:id" element={T(<ExperienceDetail />)} />
-        <Route path="/bundle" element={T(<BundleSummary />)} />
-        <Route path="/ask" element={T(<Ask />)} />
+        <Route path="/personalize" element={T(<Personalize />)} />
+        <Route path="/plan" element={T(<Plan />)} />
+        <Route path="/compare/:itemId" element={T(<Compare />)} />
+        <Route path="/price" element={T(<Price />)} />
         <Route path="/booking" element={T(<Booking />)} />
-        <Route path="/trip" element={T(<><TripSetup /><Home /></>)} />
-        <Route path="/vendor" element={<VendorConsole />} />
-        <Route path="/vendor/chat" element={<VendorChat />} />
-        <Route path="/vendor/:id" element={<VendorConsole />} />
+        <Route path="/trip" element={T(<Trip />)} />
+        <Route path="/assist" element={T(<Assist />)} />
+        <Route path="/review" element={T(<Review />)} />
+        <Route path="/tours" element={T(<Tours />)} />
+        <Route path="/vendor" element={<VendorPortal />} />
+        <Route path="/vendor/:id" element={<VendorPortal />} />
+        <Route path="/operator/*" element={<OperatorApp />} />
         <Route path="/ops" element={<LiveOps />} />
       </Routes>
-    </TravelerProvider>
+    </TourProvider>
   )
 }
