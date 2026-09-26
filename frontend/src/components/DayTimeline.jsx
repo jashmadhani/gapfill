@@ -37,7 +37,7 @@ export function ItemRow({ i, editable, onRemove, risk, compact }) {
         </div>
         <div className={cx('mt-0.5 flex items-start gap-1.5 font-semibold leading-snug', dead(i) && 'text-stone-400 line-through')}>
           <KindIcon item={i} size={15} className="mt-0.5 shrink-0 text-stone-400" />
-          {i.kind === 'activity' ? <Link to={`/experience/${i.offering_id}`}>{i.title}</Link> : i.title}
+          {i.kind === 'activity' ? <Link to={`/experience/${i.offering_id}`} className="hover:underline">{i.title}</Link> : i.title}
         </div>
         {!compact && (
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-stone-500">
@@ -49,9 +49,9 @@ export function ItemRow({ i, editable, onRemove, risk, compact }) {
         {risk && <p className="mt-1.5 text-xs text-red-600">{risk.text}</p>}
         {canEdit && (
           <div className="mt-1.5 flex gap-3">
-            <Link to={`/compare/${i.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-rani-600"><ArrowLeftRight size={13} /> Compare & swap</Link>
+            <Link to={`/compare/${i.id}`} className="-my-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-rani-600"><ArrowLeftRight size={14} aria-hidden /> Swap</Link>
             {i.kind === 'activity' && onRemove && (
-              <button onClick={() => onRemove(i)} className="inline-flex items-center gap-1 text-xs font-medium text-stone-500 hover:text-red-600"><Trash2 size={13} /> Remove</button>
+              <button onClick={() => onRemove(i)} type="button" className="-my-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-stone-500 hover:text-red-600"><Trash2 size={14} aria-hidden /> Remove</button>
             )}
           </div>
         )}

@@ -42,7 +42,7 @@ export default function Price() {
         <h1 className="text-2xl font-bold tracking-tight">{inr(p.total)}</h1>
         <p className="text-sm text-stone-500">{inr(p.per_person)} per person · {tour.travelers} traveler{tour.travelers > 1 ? 's' : ''} · {tour.days} days</p>
       </header>
-      <JourneyStrip stage={draft ? 'plan' : tour.stage} />
+      <JourneyStrip stage={draft ? 'plan' : tour.stage} hideAction />
 
       <section className="space-y-3 px-4 pt-4">
         <Card className="p-4">

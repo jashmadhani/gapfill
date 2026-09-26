@@ -52,7 +52,7 @@ export default function Review() {
         <h1 className="text-2xl font-bold tracking-tight">How was {tour.title}?</h1>
         <p className="text-sm text-stone-500">Your ratings go straight to our local partners.</p>
       </header>
-      <JourneyStrip stage="complete" />
+      <JourneyStrip stage="complete" hideAction />
       <section className="space-y-3 px-4 pt-4">
         <Card className="p-4 text-center">
           <Stars value={overall} onChange={setOverall} size={32} />

@@ -203,7 +203,7 @@ async def state(db: AsyncSession = Depends(get_db)):
     tour = await db.get(Tour, st.active_tour_id) if st.active_tour_id else None
     return {"demo_date": st.demo_date.isoformat(), "demo_time": st.demo_time, "active_tour_id": st.active_tour_id,
             "active_day": current_day(tour, st) if tour else None, "rain": st.rain,
-            "destinations": [{"key": k, "name": d["name"], "airport": d["airport"], "rail": d["rail"]} for k, d in P.W["dests"].items()],
+            "destinations": [{"key": k, "name": d["name"], "airport": d["airport"], "rail": d["rail"], "lat": d["lat"], "lng": d["lng"]} for k, d in P.W["dests"].items()],
             "interests": INTERESTS, "tiers": TIERS, "paces": list(PACES), "transport_modes": ["best", "car", "train", "flight"],
             "db": backend_name(), "assistant": llm_mode()}
 

@@ -6,7 +6,7 @@ import {
 import { api, fmtDate, fmtTime, inr } from '../api'
 import { useTour } from '../store'
 import DayTimeline, { VENDOR_CHIP } from '../components/DayTimeline'
-import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Spinner, cx } from '../components/ui'
+import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Sheet, Spinner, cx } from '../components/ui'
 import { destImage } from '../media'
 
 const toMin = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m }
@@ -27,20 +27,76 @@ function Coordinator({ c }) {
 }
 
 function Risks({ tour, onFix }) {
-  if (!tour.risks.length) return null
+  // "Vendor hasn't confirmed yet" is the operator's job, so travelers see one quiet line, not a list.
+  const pending = tour.risks.filter((r) => r.kind === 'unconfirmed').length
+  const shown = tour.risks.filter((r) => r.kind !== 'unconfirmed')
+  if (!shown.length && !pending) return null
   const tone = { high: 'bg-red-50 ring-red-200 text-red-800', medium: 'bg-amber-50 ring-amber-200 text-amber-900', low: 'bg-sky-50 ring-sky-200 text-sky-900' }
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500"><BellRing size={14} /> Heads-up</div>
-      {tour.risks.map((r, i) => (
-        <div key={i} className={cx('flex items-start justify-between gap-2 rounded-xl px-3 py-2 text-xs ring-1', tone[r.level])}>
-          <span>{r.text}</span>
+    <div className="space-y-2">
+      {shown.map((r, i) => (
+        <div key={i} className={cx('flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm ring-1', tone[r.level])}>
+          <span className="flex items-start gap-2"><BellRing size={16} className="mt-0.5 shrink-0" aria-hidden /> {r.text}</span>
           {['weather', 'unavailable', 'declined', 'connection'].includes(r.kind) && (
-            <button onClick={() => onFix(r)} className="shrink-0 font-semibold underline">{r.kind === 'connection' ? 'Options' : 'Fix'}</button>
+            <button type="button" onClick={() => onFix(r)} className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-white/70 px-4 font-semibold">{r.kind === 'connection' ? 'Options' : 'Fix'}</button>
           )}
         </div>
       ))}
+      {pending > 0 && <p className="flex items-center gap-2 px-1 text-sm text-stone-500"><CircleCheck size={15} aria-hidden /> {pending} booking{pending > 1 ? 's' : ''} being confirmed by local partners. Nothing for you to do.</p>}
     </div>
+  )
+}
+
+// One entry point for every "something changed" report; options only appear when needed.
+function ReportChange({ tour, today, fire, busy }) {
+  const nav = useNavigate()
+  const [open, setOpen] = useState(false)
+  const [view, setView] = useState('menu')
+  const [late, setLate] = useState(30)
+  const total = Math.round(tour.pricing.total)
+  const [budget, setBudget] = useState(total)
+  const close = () => { setOpen(false); setView('menu') }
+  const go = async (body, fallback) => { await fire(body, fallback); close() }
+  const opt = (Icon, title, sub, onClick) => (
+    <button type="button" onClick={onClick} disabled={busy}
+      className="flex min-h-16 w-full items-center gap-3 rounded-2xl bg-white px-4 text-left shadow-soft ring-1 ring-stone-200/70 transition hover:ring-stone-300 disabled:opacity-50">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rani-50 text-rani-600"><Icon size={18} aria-hidden /></span>
+      <span className="min-w-0"><span className="block font-semibold">{title}</span><span className="block text-sm text-stone-500">{sub}</span></span>
+    </button>
+  )
+  return (
+    <>
+      <Button variant="secondary" className="w-full" onClick={() => setOpen(true)}><BellRing size={16} aria-hidden /> Report a change</Button>
+      <Sheet open={open} onClose={close} title={view === 'late' ? 'How late are you?' : view === 'budget' ? 'New total budget' : 'What changed?'}>
+        {view === 'menu' && (
+          <div className="space-y-2">
+            {opt(Clock, 'Running late', 'We’ll shift or swap what’s affected', () => setView('late'))}
+            {opt(CloudRain, 'It’s raining', 'Swap outdoor plans for indoor ones', () => go({ trigger_type: 'weather', dest: today.dest, date: today.date }, 'No outdoor plans affected.'))}
+            {opt(IndianRupee, 'Change my budget', 'We’ll re-price and suggest savings', () => setView('budget'))}
+            {opt(MessageCircle, 'Something else', 'Tell the trip assistant', () => { close(); nav('/assist') })}
+          </div>
+        )}
+        {view === 'late' && (
+          <div className="space-y-4">
+            <Segmented value={late} onChange={setLate} options={[15, 30, 60, 90].map((m) => ({ value: m, label: `${m} min` }))} />
+            <Button className="w-full" disabled={busy} onClick={() => go({ trigger_type: 'running_late', minutes: late }, 'Nothing is affected — you’re fine.')}>Update my day</Button>
+          </div>
+        )}
+        {view === 'budget' && (
+          <div className="space-y-4">
+            <div className="text-center"><div className="font-display text-4xl">{inr(budget)}</div><div className="text-sm text-stone-500">currently {inr(total)}</div></div>
+            <input type="range" min={Math.round(total * 0.5)} max={Math.round(total * 1.3)} step={1000} value={budget} onChange={(e) => setBudget(Number(e.target.value))}
+              aria-label="New budget" className="w-full accent-rani-600" />
+            <div className="grid grid-cols-3 gap-2">
+              {[[-0.1, '−10%'], [-0.2, '−20%'], [0.1, '+10%']].map(([f, l]) => (
+                <button key={l} type="button" onClick={() => setBudget(Math.round(total * (1 + f) / 1000) * 1000)} className="min-h-11 rounded-full bg-white text-sm font-semibold ring-1 ring-stone-200">{l}</button>
+              ))}
+            </div>
+            <Button className="w-full" disabled={busy} onClick={() => go({ trigger_type: 'budget_change', new_budget: budget }, 'Budget updated')}>Apply budget</Button>
+          </div>
+        )}
+      </Sheet>
+    </>
   )
 }
 
@@ -63,7 +119,6 @@ function Changes({ tour }) {
 
 function Operate({ tour, state, onFix }) {
   const { notify } = useTour()
-  const [late, setLate] = useState(30)
   const [busy, setBusy] = useState(false)
   const today = tour.days_detail[tour.current_day - 1]
   const now = toMin(state.demo_time)
@@ -80,11 +135,6 @@ function Operate({ tour, state, onFix }) {
       if (!r.events.length) notify(r.note || fallback)
     } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
   }
-  const budget = () => {
-    const v = prompt('New total budget for the tour (₹)', Math.round(tour.pricing.total * 0.9))
-    if (v) fire({ trigger_type: 'budget_change', new_budget: Number(v) }, 'Budget updated')
-  }
-
   return (
     <>
       {hero ? (
@@ -116,17 +166,7 @@ function Operate({ tour, state, onFix }) {
 
       <Risks tour={tour} onFix={onFix} />
 
-      <Card className="space-y-2 p-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-stone-500">Something changed?</div>
-        <div className="flex items-center gap-2">
-          <div className="flex-1"><Segmented value={late} onChange={setLate} options={[15, 30, 60].map((m) => ({ value: m, label: `${m} min` }))} /></div>
-          <Button variant="secondary" disabled={busy} onClick={() => fire({ trigger_type: 'running_late', minutes: late }, 'Nothing is affected — you’re fine.')}><Clock size={15} /> Running late</Button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" disabled={busy} onClick={() => fire({ trigger_type: 'weather', dest: today.dest, date: today.date }, 'No outdoor plans affected.')}><CloudRain size={15} /> It’s raining</Button>
-          <Button variant="secondary" disabled={busy} onClick={budget}><IndianRupee size={15} /> New budget</Button>
-        </div>
-      </Card>
+      <ReportChange tour={tour} today={today} fire={fire} busy={busy} />
 
       <DayTimeline d={today} editable risks={tour.risks} onRemove={(i) => confirm(`Remove ${i.title}?\n\n${i.policy}`) && api.removeItem(tour.id, i.id).then(() => notify('Removed'))} />
       {tomorrow && <div className="opacity-80"><DayTimeline d={tomorrow} compact risks={tour.risks} /></div>}
@@ -211,7 +251,7 @@ export default function Trip() {
         <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
         {tour.stage === 'operate' && <p className="text-sm text-stone-500">{tour.days_detail[tour.current_day - 1].dest_name} · {tour.title}</p>}
       </header>
-      <JourneyStrip stage={tour.stage} />
+      <JourneyStrip stage={tour.stage} day={tour.current_day} days={tour.days} hideAction />
       <section className="space-y-3 px-4 pt-4">
         {tour.stage === 'plan' && <Empty title="Your plan isn't booked yet" action={<Link to="/price"><Button>Review price & book</Button></Link>}>Once booked, this becomes your live trip hub: vouchers, checklist, alerts and replanning.</Empty>}
         {tour.stage === 'prepare' && <Prepare tour={tour} state={state} onFix={onFix} />}
