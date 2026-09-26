@@ -105,8 +105,10 @@ export default function Personalize() {
   const travelers = f.members.length
   const moods = [...new Set([...f.mood, ...detected])]
 
-  const submit = async (e) => {
-    e.preventDefault()
+  // Build only from an explicit tap: the form's own submit (Enter key, or a button that just changed type
+  // under the finger) must never skip the remaining steps.
+  const build = async () => {
+    if (busy) return
     setBusy(true)
     try {
       const t = await api.plan({ ...f, budget: Number(f.budget), mood: moods, mood_text: moodText })
@@ -120,7 +122,7 @@ export default function Personalize() {
   const inputCls = 'mt-1 min-h-11 w-full rounded-2xl bg-white px-3 ring-1 ring-stone-200 focus:outline-none focus:ring-2 focus:ring-rani-500'
 
   return (
-    <form onSubmit={submit} className="flex min-h-[calc(100dvh-8rem)] flex-col px-4 pt-5 md:px-6">
+    <form onSubmit={(e) => e.preventDefault()} className="flex min-h-[calc(100dvh-8rem)] flex-col px-4 pt-5 md:px-6">
       <div>
         <p className="text-sm font-semibold text-rani-600">Step {step + 1} of {STEPS.length}</p>
         <h1 className="font-display text-3xl">{STEPS[step]}</h1>
@@ -171,7 +173,7 @@ export default function Personalize() {
             </Button>
             <div className="rounded-3xl bg-white p-4 shadow-soft ring-1 ring-stone-200/70">
               <div className="font-semibold">How’s everyone feeling?</div>
-              <p className="text-sm text-stone-500">Type it like you’d text a friend — our mood model reads it.</p>
+              <p className="text-sm text-stone-500">Type it like you’d text a friend, our mood model reads it.</p>
               <input value={moodText} onChange={(e) => setMoodText(e.target.value)} placeholder="e.g. the kids are restless and we’re a bit tired" className={inputCls} />
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {Object.entries(MOOD).map(([k, { label, Icon }]) => (
@@ -209,7 +211,7 @@ export default function Personalize() {
             <div className="text-sm font-semibold">Stays<div className="mt-1.5"><Segmented value={f.hotel_tier} onChange={(v) => set('hotel_tier', v)} options={state.tiers.map((t) => ({ value: t, label: TIER_LABEL[t] }))} /></div></div>
             <div className="text-sm font-semibold">Getting around<div className="mt-1.5"><Segmented value={f.transport} onChange={(v) => set('transport', v)} options={state.transport_modes.map((m) => ({ value: m, label: MODE[m].label }))} /></div></div>
             <div className="text-sm font-semibold">Pace<div className="mt-1.5"><Segmented value={f.pace} onChange={(v) => set('pace', v)} options={state.paces.map((p) => ({ value: p, label: PACE_LABEL[p] }))} /></div>
-              <p className="mt-1 font-normal text-stone-500">{PACE_HINT[f.pace]} — the youngest and oldest in the group can shorten it.</p></div>
+              <p className="mt-1 font-normal text-stone-500">{PACE_HINT[f.pace]}, the youngest and oldest in the group can shorten it.</p></div>
             <label className="block text-sm font-semibold">Lead traveler
               <input value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="name" className={inputCls} />
             </label>
@@ -217,14 +219,14 @@ export default function Personalize() {
         )}
       </div>
 
-      <div className="sticky bottom-[calc(88px+env(safe-area-inset-bottom))] mt-6 grid grid-cols-[auto_1fr] gap-2">
+      <div className="sticky bottom-[calc(80px+env(safe-area-inset-bottom))] z-10 -mx-4 mt-6 grid grid-cols-[auto_1fr] gap-2 bg-gradient-to-t from-sand-50 from-70% to-sand-50/0 px-4 pb-2 pt-6 md:-mx-6 md:px-6">
         {step > 0 ? <Button type="button" variant="secondary" onClick={() => setStep(step - 1)}>Back</Button> : <span />}
         {last
-          ? <Button type="submit" disabled={busy || !f.interests.length || !travelers}>{busy ? 'Predicting what everyone will enjoy…' : 'Build our tour'}</Button>
-          : <Button type="button" onClick={() => setStep(step + 1)}>Next</Button>}
+          ? <Button key="build" type="button" onClick={build} disabled={busy || !f.interests.length || !travelers}>{busy ? 'Predicting what everyone will enjoy…' : 'Build our tour'}</Button>
+          : <Button key="next" type="button" onClick={() => setStep(step + 1)}>Next</Button>}
         {!last && (
-          <button type="submit" disabled={busy || !f.interests.length || !travelers} className="col-span-2 min-h-11 text-sm font-semibold text-rani-600 hover:underline disabled:opacity-50">
-            {busy ? 'Building your plan…' : 'Skip — build with smart defaults'}
+          <button type="button" onClick={build} disabled={busy || !f.interests.length || !travelers} className="col-span-2 min-h-11 text-sm font-semibold text-rani-600 hover:underline disabled:opacity-50">
+            {busy ? 'Building your plan…' : 'Skip, build with smart defaults'}
           </button>
         )}
       </div>

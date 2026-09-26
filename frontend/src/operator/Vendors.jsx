@@ -16,7 +16,7 @@ export default function Vendors() {
   const toggle = async (v) => {
     setBusy(v.id)
     const r = await api.vendorStatus(v.id, { status: v.status === 'open' ? 'closed' : 'open' })
-    if (r.events) alert(`${r.events} tour(s) affected — replanning options sent to travelers and the Changes queue.`)
+    if (r.events) alert(`${r.events} tour(s) affected, replanning options sent to travelers and the Changes queue.`)
     setBusy(null); refresh()
   }
   return (
@@ -33,10 +33,10 @@ export default function Vendors() {
                 <Td><Link to={`/vendor/${v.id}`} className="font-semibold hover:underline">{v.name}</Link><div className="text-xs text-stone-500">{v.phone} · {v.offerings} listing(s)</div></Td>
                 <Td className="text-xs capitalize">{v.kind}</Td>
                 <Td className="text-xs">{v.dest_name}</Td>
-                <Td>{v.rating ? `${v.rating.toFixed(1)}★` : '—'}</Td>
+                <Td>{v.rating ? `${v.rating.toFixed(1)}★` : '-'}</Td>
                 <Td className="text-right">{v.bookings}</Td>
                 <Td className="text-right">{inr(v.revenue)}</Td>
-                <Td>{v.pending ? <Chip tone="amber">{v.pending} pending</Chip> : v.bookings ? <Chip tone="green">all confirmed</Chip> : <span className="text-xs text-stone-400">—</span>}</Td>
+                <Td>{v.pending ? <Chip tone="amber">{v.pending} pending</Chip> : v.bookings ? <Chip tone="green">all confirmed</Chip> : <span className="text-xs text-stone-400">-</span>}</Td>
                 <Td>
                   <button disabled={busy === v.id} onClick={() => toggle(v)} className={cx('rounded-full px-2.5 py-1 text-xs font-semibold text-white', v.status === 'open' ? 'bg-emerald-600' : 'bg-stone-500')}>
                     {v.status === 'open' ? 'Open' : 'Closed'}

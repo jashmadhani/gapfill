@@ -340,7 +340,7 @@ async def plan_tour(body: PlanIn, db: AsyncSession = Depends(get_db)):
     res = P.plan(prefs, start, st.rain)
     count = (await db.execute(select(func.count(Tour.id)))).scalar() or 0
     names = [P.W["dests"][s["dest"]]["name"] for s in res["route"]]
-    tour = Tour(code=f"TC-{2601 + count}", title=body.title or f"{' · '.join(names)} — {res['ctx']['days']} days", customer_id=cust.id,
+    tour = Tour(code=f"TC-{2601 + count}", title=body.title or f"{' · '.join(names)}, {res['ctx']['days']} days", customer_id=cust.id,
                 start_date=start, days=res["ctx"]["days"], prefs={**prefs, "days": res["ctx"]["days"]}, route=res["route"],
                 group={"name": cust.name, "adults": prefs["adults"], "children": prefs["children"],
                        "members": [f"{m['name']} ({m['age']})" for m in members]},

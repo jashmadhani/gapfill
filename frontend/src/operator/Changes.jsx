@@ -15,7 +15,7 @@ export default function Changes() {
   const done = all.filter((e) => e.status !== 'pending')
   return (
     <div>
-      <PageHead title="Changes" sub={`${pending.length} waiting · ${done.length} resolved. Travelers get the same options live — approve on their behalf if they call in.`} />
+      <PageHead title="Changes" sub={`${pending.length} waiting · ${done.length} resolved. Travelers get the same options live, approve on their behalf if they call in.`} />
       {pending.length === 0 && <Card className="mb-4 p-6 text-center text-sm text-stone-500">No pending changes. Use <Link to="/ops" className="underline">Live Ops</Link> to trigger weather, delays, cancellations or overbookings.</Card>}
       <div className="space-y-4">{pending.map((ev) => <PendingChange key={ev.id} ev={ev} onDone={refresh} />)}</div>
       <div className="mt-6 mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">History</div>
@@ -33,7 +33,7 @@ export default function Changes() {
                   <Td><Chip tone="rani">{e.label}</Chip><div className="mt-0.5 max-w-md text-xs text-stone-500">{e.reason}</div></Td>
                   <Td>{e.status === 'accepted' ? <Chip tone="green">{opt?.label}</Chip> : <Chip>{e.resolved_by === 'superseded' ? 'superseded' : 'kept original'}</Chip>}</Td>
                   <Td className="text-xs capitalize">{e.resolved_by}</Td>
-                  <Td className="text-right text-xs">{opt ? signedInr(opt.cost_delta) : '—'}</Td>
+                  <Td className="text-right text-xs">{opt ? signedInr(opt.cost_delta) : '-'}</Td>
                 </tr>
               )
             })}

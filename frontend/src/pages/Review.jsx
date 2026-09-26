@@ -30,7 +30,7 @@ export default function Review() {
   if (tour.stage !== 'complete') {
     return (
       <div className="px-4 pt-5">
-        <Empty title={tour.stage === 'review' ? 'Already reviewed — thank you!' : 'Reviews open after your tour'} action={<Link to="/trip"><Button variant="secondary">Back to trip</Button></Link>}>
+        <Empty title={tour.stage === 'review' ? 'Already reviewed, thank you!' : 'Reviews open after your tour'} action={<Link to="/trip"><Button variant="secondary">Back to trip</Button></Link>}>
           {tour.stage === 'review' ? `You rated it ${tour.review?.overall}/5.` : 'We’ll ask for your feedback on the last day.'}
         </Empty>
       </div>

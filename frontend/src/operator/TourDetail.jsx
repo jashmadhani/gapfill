@@ -30,7 +30,7 @@ export function PendingChange({ ev, onDone }) {
             <Button className="flex-1" disabled={busy} onClick={() => act('accept')}>Apply plan {choice} for traveler</Button>
             <Button variant="secondary" disabled={busy} onClick={() => act('dismiss')}>Keep original</Button>
           </div>
-          <p className="mt-1 text-xs text-stone-500">The traveler sees the same options on their phone — whoever decides first wins; vendors are re-booked and notified automatically.</p>
+          <p className="mt-1 text-xs text-stone-500">The traveler sees the same options on their phone, whoever decides first wins; vendors are re-booked and notified automatically.</p>
         </div>
       </div>
     </Card>

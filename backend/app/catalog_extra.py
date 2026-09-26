@@ -36,7 +36,7 @@ ACT_COORDS = {
     "Dune Bashing Jeep Safari": (26.8300, 70.5000), "Kuldhara Abandoned Village": (26.8000, 70.7900),
     "Pushkar Ghats & Brahma Temple": (26.4880, 74.5530), "Savitri Temple Ropeway Sunrise": (26.4720, 74.5450),
     "Pushkar Bazaar & Cafe Trail": (26.4895, 74.5530), "Hot Air Balloon Ride": (26.4950, 74.5700),
-    "Tiger Safari — Morning Canter": (26.0170, 76.5020), "Tiger Safari — Private Gypsy": (26.0200, 76.4900),
+    "Tiger Safari: Morning Canter": (26.0170, 76.5020), "Tiger Safari: Private Gypsy": (26.0200, 76.4900),
     "Ranthambore Fort Hike": (26.0200, 76.4570), "Dastkar Craft Village Visit": (26.0100, 76.3700),
     "Taj Mahal Sunrise Guided Tour": (27.1751, 78.0421), "Agra Fort Guided Visit": (27.1795, 78.0211),
     "Mehtab Bagh Sunset View": (27.1800, 78.0430), "Mughlai Food Walk": (27.1870, 78.0140),

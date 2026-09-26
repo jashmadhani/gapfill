@@ -1,5 +1,5 @@
 """Group-aware insights on top of the ML models: per-person fit (with reasons), smart tags with advice
-("overcrowded — skip it, go here instead"), the "considered but not added" list, fairness summary, feedback logging."""
+("overcrowded, skip it, go here instead"), the "considered but not added" list, fairness summary, feedback logging."""
 
 
 from . import planner as P
@@ -36,7 +36,7 @@ def tags_for(o, ctx, day, start, fit, members, items=None, item=None, crowd=None
                     if a["crowd"] <= c - 25 and a["fit"] >= fit - 5 and (set(a["offering"]["tags"]) & set(o["tags"]) or a["offering"].get("category") == o.get("category"))]
         if alts:
             a = alts[0]
-            comment += f" Skip it — {a['offering']['title']} is only {a['crowd']}% busy then and suits your group ({a['fit']}% fit)."
+            comment += f" Skip it, {a['offering']['title']} is only {a['crowd']}% busy then and suits your group ({a['fit']}% fit)."
             action = {"type": "swap", "offering_id": a["offering"]["id"], "title": a["offering"]["title"], "label": f"Go to {a['offering']['title']} instead"}
         elif quiet and quiet["crowd"] <= c - 20:
             comment += f" Much quieter around {P.label(quiet['hour'] * 60)} ({quiet['crowd']}%)."
@@ -45,7 +45,7 @@ def tags_for(o, ctx, day, start, fit, members, items=None, item=None, crowd=None
         out.append({"key": "crowded", "label": "Overcrowded", "tone": "red", "comment": comment, "action": action})
     if outdoor and day and 12 * 60 <= start <= 16 * 60 and MONTH_HEAT.get(d.month, 0.3) >= 0.5 and any(a <= 7 or a >= 60 for a in ages):
         who = ", ".join(f"{m['name']} ({m['age']})" for m in members if m["age"] <= 7 or m["age"] >= 60)
-        out.append({"key": "heat", "label": "Midday heat", "tone": "amber", "comment": f"Hot and exposed at this hour — hard on {who}. Mornings are cooler.", "action": None})
+        out.append({"key": "heat", "label": "Midday heat", "tone": "amber", "comment": f"Hot and exposed at this hour, hard on {who}. Mornings are cooler.", "action": None})
     if o["rating"] >= 4.6 and (o.get("popularity") or 0) <= 0.05 and c <= 40:
         out.append({"key": "gem", "label": "Hidden gem", "tone": "green", "comment": f"Rated {o['rating']:.1f}★ by the few who find it, and rarely busy.", "action": None})
     if outdoor and quiet and quiet["hour"] <= 8 and o.get("category") in ("heritage", "viewpoint", "religious", "nature") and not any(t["key"] == "crowded" for t in out):
@@ -58,9 +58,9 @@ def tags_for(o, ctx, day, start, fit, members, items=None, item=None, crowd=None
         out.append({"key": "senior", "label": "Senior-friendly", "tone": "green", "comment": "Plenty of seating and few stairs.", "action": None})
     if o["price"] >= 1500 and fit < 60:
         out.append({"key": "pricey", "label": "Pricey for the fit", "tone": "amber",
-                    "comment": f"{P.fmt_inr(o['price'])} per person for a {fit}% group fit — there are better-value picks nearby.", "action": None})
+                    "comment": f"{P.fmt_inr(o['price'])} per person for a {fit}% group fit, there are better-value picks nearby.", "action": None})
     if (o.get("popularity") or 0) >= 1.0 or o.get("capacity", 99) <= 12:
-        out.append({"key": "book", "label": "Book ahead", "tone": "blue", "comment": "Sells out on busy days — booking early matters.", "action": None})
+        out.append({"key": "book", "label": "Book ahead", "tone": "blue", "comment": "Sells out on busy days, booking early matters.", "action": None})
     return out[:3]
 
 
@@ -102,19 +102,19 @@ def considered(tour, items, ctx, st, total, current_day=None) -> list:
                 code, why = "unavailable", "Closed or fully booked right now."
             elif ev["vetoed"]:
                 v = ev["vetoed"][0]
-                code, why = "access", f"Not for {v['name']} ({v['age']}) — {v['veto']}."
+                code, why = "access", f"Not for {v['name']} ({v['age']}), {v['veto']}."
                 ok = [m for m in ev["members"] if not m["veto"]]
                 if ok and ev["fit_eligible"] >= 70:
                     note = "Works as a split track for " + ", ".join(m["name"] for m in ok) + "."
             elif all(P.day_date(ctx, d).weekday() in (o.get("closed_weekdays") or []) for d in days):
-                code, why = "closed", f"Closed on {', '.join(sorted({WEEKDAY[P.day_date(ctx, d).weekday()] for d in days}))} — your day(s) here."
+                code, why = "closed", f"Closed on {', '.join(sorted({WEEKDAY[P.day_date(ctx, d).weekday()] for d in days}))}, your day(s) here."
             else:
                 add_day = next((d for d in days if not P.act_allowed(o, ctx, d) and P.free_slot(items, d, o, ctx)), None)
                 extra = P.gross(o["price"] * ctx["travelers"])
                 if ctx["budget"] and total + extra > ctx["budget"]:
                     code, why = "budget", f"Would take you {P.fmt_inr(total + extra - ctx['budget'])} over budget."
                 elif low is not None and ev["fit_eligible"] < low:
-                    code, why = "fit", f"Group fit {ev['fit_eligible']}% — below everything planned here (lowest {low}%)."
+                    code, why = "fit", f"Group fit {ev['fit_eligible']}%, below everything planned here (lowest {low}%)."
                 elif not add_day:
                     code, why = "full", f"Your {len(days)} day(s) in {P.W['dests'][dest]['name']} are already full."
                 else:

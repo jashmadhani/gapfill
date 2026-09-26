@@ -102,7 +102,7 @@ async def remove(db, tour: Tour, item_id: int) -> dict:
     if not row or row.tour_id != tour.id:
         raise CustomizeError("Unknown item.")
     if row.kind in ("hotel", "transport") and tour.status == "draft":
-        raise CustomizeError("Stays and transfers hold the route together — swap them instead of removing.")
+        raise CustomizeError("Stays and transfers hold the route together, swap them instead of removing.")
     if row.kind == "activity" and row.offering_id:
         ctx = ctx_for(tour, st)
         log_feedback(db, tour, ctx, row.offering_id, row.day, row.start_min, 2.0, "removed", P.item_members(item_dict(row), ctx))
@@ -126,7 +126,7 @@ async def optimise(db, tour: Tour) -> list:
             continue
         for k in ("offering_id", "vendor_id", "title", "start_min", "end_min", "qty", "unit_price", "price", "meta"):
             setattr(r, k, i[k])
-    tour.notes = notes or ["Already within budget — nothing to change."]
+    tour.notes = notes or ["Already within budget, nothing to change."]
     return tour.notes
 
 

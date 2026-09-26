@@ -7,7 +7,7 @@ import { api, fmtDate, fmtTime, inr } from '../api'
 import { useTour } from '../store'
 import DayTimeline, { VENDOR_CHIP, useTagAction } from '../components/DayTimeline'
 import { MOOD } from '../components/group'
-import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Sheet, Spinner, cx } from '../components/ui'
+import { Button, Card, Chip, Empty, JourneyStrip, KindIcon, Photo, Segmented, Sheet, Spinner, StartTripButton, cx } from '../components/ui'
 import { destImage } from '../media'
 import { buildTripMap } from '../lib/tripMap'
 
@@ -68,7 +68,7 @@ function ReportChange({ tour, today, fire, busy }) {
   const checkIn = async () => {
     try {
       const r = await api.moodCheckin(tour.id, { text: moodText, moods })
-      if (!r.events.length) notify(r.note || 'Noted — your plan already suits that.')
+      if (!r.events.length) notify(r.note || 'Noted, your plan already suits that.')
       setMoodText(''); setMoods([]); close(); refresh()
     } catch (e) { notify(e.message, 'error') }
   }
@@ -111,7 +111,7 @@ function ReportChange({ tour, today, fire, busy }) {
         {view === 'late' && (
           <div className="space-y-4">
             <Segmented value={late} onChange={setLate} options={[15, 30, 60, 90].map((m) => ({ value: m, label: `${m} min` }))} />
-            <Button className="w-full" disabled={busy} onClick={() => go({ trigger_type: 'running_late', minutes: late }, 'Nothing is affected — you’re fine.')}>Update my day</Button>
+            <Button className="w-full" disabled={busy} onClick={() => go({ trigger_type: 'running_late', minutes: late }, 'Nothing is affected, you’re fine.')}>Update my day</Button>
           </div>
         )}
         {view === 'budget' && (
@@ -190,7 +190,7 @@ function Operate({ tour, state, onFix }) {
             </div>
           </Photo>
         </Link>
-      ) : <Empty title="You’re done for today">Rest up — tomorrow is ready below.</Empty>}
+      ) : <Empty title="You’re done for today">Rest up, tomorrow is ready below.</Empty>}
 
       {hero && (
         <div className="grid grid-cols-3 gap-2">
@@ -258,6 +258,14 @@ function Prepare({ tour, state, onFix }) {
           </div>
         </div>
       </Photo>
+      <div className="rounded-[1.75rem] bg-ink p-5 text-white shadow-float">
+        <p className="text-lg font-bold">Ready when you are</p>
+        <p className="mt-1 text-[15px] text-white/80">Your trip goes live on {fmtDate(tour.start_date, { day: 'numeric', month: 'short' })}: live day plan, route map and instant replanning.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Link to="/plan" className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 font-semibold text-white">Preview day 1</Link>
+          <StartTripButton className="inline-flex min-h-12 items-center justify-center rounded-full bg-white font-bold text-ink">Start my trip</StartTripButton>
+        </div>
+      </div>
       <Risks tour={tour} onFix={onFix} />
 
       <div className="grid grid-cols-2 gap-3">

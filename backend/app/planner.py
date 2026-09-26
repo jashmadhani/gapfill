@@ -5,6 +5,7 @@ Everything here works on plain dicts so it can be reused for drafts, booked tour
 Deterministic: the same inputs always give the same plan.
 """
 import math
+from itertools import permutations
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -230,7 +231,7 @@ def act_allowed(o, ctx, day=None, check_status=True, members=None) -> str | None
     for m in members or ctx["members"]:
         v = ML.veto(m, o["place"])
         if v:
-            return f"not for {m['name']} ({m['age']}) — {v}"
+            return f"not for {m['name']} ({m['age']}), {v}"
     if day and day_date(ctx, day).weekday() in (o.get("closed_weekdays") or []):
         return "closed that day"
     return None
@@ -398,29 +399,66 @@ def day_window(ctx, day, items) -> tuple[int, int]:
     return start, end
 
 
+def _sequence(seq: list, start: int, end: int, anchor=None, fixed: list | None = None) -> list | None:
+    """Place activities in exactly this order into [start, end], respecting opening hours, local travel and fixed blocks."""
+    cur, loc, out = start, anchor, []
+    for o in seq:
+        # sunrise-only experiences (e.g. morning safaris) may start before the day's usual start
+        lo = start if hm(o["close"]) - o["duration_min"] >= start or out else max(hm(o["open"]), start - 180)
+        st = max((cur if out else lo) + (local_min(loc, pt(o)) if out or anchor else 0), hm(o["open"]))
+        if not out and lo < start:
+            st = max(lo, hm(o["open"]))
+        for fs, fe in sorted(fixed or []):
+            if st < fe and st + o["duration_min"] > fs:
+                st = max(st, fe + 20)
+        en = st + o["duration_min"]
+        if en > min(end, hm(o["close"])):
+            return None
+        out.append((o, st, en))
+        cur, loc = en, pt(o)
+    return out
+
+
+def loop_min(seq: list, anchor=None) -> int:
+    """Travel minutes for hotel -> each stop in order -> back to the hotel."""
+    pts = ([anchor] if anchor else []) + [pt(o) for o in seq] + ([anchor] if anchor else [])
+    return sum(local_min(a, b) for a, b in zip(pts, pts[1:]))
+
+
 def pack(acts: list, start: int, end: int, anchor=None, fixed: list | None = None) -> list | None:
-    """Try to sequence activities into [start, end] respecting opening hours and local travel.
-    fixed = already-scheduled (start, end) blocks that can't move. Returns [(o, st, en)] or None."""
+    """Sequence a day's activities as one loop from the hotel: of every order that fits opening hours and fixed
+    bookings, take the one with the least travel, so the day never doubles back across town.
+    anchor = where the day starts and ends (the hotel). Returns [(o, st, en)] or None."""
+    if not acts:
+        return []
+    if len(acts) <= 7:
+        best = None
+        for perm in permutations(acts):
+            cost = loop_min(perm, anchor)
+            if best and cost >= best[0]:
+                continue
+            seq = _sequence(list(perm), start, end, anchor, fixed)
+            if seq:
+                best = (cost, seq)
+        if best:
+            return best[1]
     for order in (lambda o: (hm(o["open"]), hm(o["close"])), lambda o: (hm(o["close"]), hm(o["open"]))):
-        cur, loc, out, ok = start, anchor, [], True
-        for o in sorted(acts, key=order):
-            # sunrise-only experiences (e.g. morning safaris) may start before the day's usual start
-            lo = start if hm(o["close"]) - o["duration_min"] >= start or out else max(hm(o["open"]), start - 180)
-            st = max((cur if out else lo) + (local_min(loc, pt(o)) if out or anchor else 0), hm(o["open"]))
-            if not out and lo < start:
-                st = max(lo, hm(o["open"]))
-            for fs, fe in sorted(fixed or []):
-                if st < fe and st + o["duration_min"] > fs:
-                    st = max(st, fe + 20)
-            en = st + o["duration_min"]
-            if en > min(end, hm(o["close"])):
-                ok = False
-                break
-            out.append((o, st, en))
-            cur, loc = en, pt(o)
-        if ok:
-            return out
+        seq = _sequence(sorted(acts, key=order), start, end, anchor, fixed)
+        if seq:
+            return seq
     return None
+
+
+def day_anchor(ctx, day, items):
+    """Where the day starts: the hotel you slept in (or check into) that day, else the city centre."""
+    dest = dest_for_day(ctx, day)
+    for h in items:
+        if h["kind"] == "hotel" and live(h) and h["dest_key"] == dest and h["day"] <= day < h["day"] + max(1, h.get("nights") or 1):
+            p = pt(off(h["offering_id"]))
+            if p:
+                return p
+    d = W["dests"].get(dest)
+    return (d["lat"], d["lng"]) if d else None
 
 
 def blocks(items, day, exclude=None, split=None) -> list:
@@ -504,7 +542,7 @@ def schedule_day(ctx, day, items, used: set) -> list:
     chosen: list = []
     best = []
     hi = 0
-    anchor = (W["dests"][dest]["lat"], W["dests"][dest]["lng"])
+    anchor = day_anchor(ctx, day, items)
     for o in cands:
         if len(chosen) >= cap:
             break
@@ -516,6 +554,12 @@ def schedule_day(ctx, day, items, used: set) -> list:
             best = trial
             hi += o.get("intensity", 2) >= 4
     out = [activity_item(o, day, st, ctx) for o, st, _ in best]
+    if len(best) >= 3:
+        naive = sorted((o for o, _, _ in best), key=lambda o: (hm(o["open"]), hm(o["close"])))
+        saved = loop_min(naive, anchor) - loop_min([o for o, _, _ in best], anchor)
+        if saved >= 5:
+            ctx.setdefault("_route_notes", []).append(
+                f"Day {day} runs as one loop from your hotel, saving about {saved} min of back-and-forth travel.")
     if len(ctx["members"]) >= 2:
         out += split_track(ctx, day, items + out, used | {o["id"] for o in chosen}, fixed)
     return out
@@ -538,7 +582,7 @@ def allocate_nights(dests: list, nights: int, interests: list, warnings: list) -
     if len(dests) > nights:
         keep = sorted(dests, key=lambda d: -weight[d])[:max(1, nights)]
         dropped = [W["dests"][d]["name"] for d in dests if d not in keep]
-        warnings.append(f"Not enough nights for every stop — dropped {', '.join(dropped)}. Add days to include them.")
+        warnings.append(f"Not enough nights for every stop, dropped {', '.join(dropped)}. Add days to include them.")
         dests = [d for d in dests if d in keep]
     alloc = {d: 1 for d in dests}
     left = nights - len(dests)
@@ -575,7 +619,7 @@ def build_items(ctx, start_city: str, end_city: str, warnings: list, keep_activi
                         and t["dest_key"] == s["dest"]), None)
             items.append(hotel_item(h, s["first_day"], s["nights"], ctx, max(CHECKIN, (arr or 0) + 30)))
             if h["tier"] != ctx["tier"]:
-                warnings.append(f"{h['title']} is {h['tier']} (you asked for {ctx['tier']}) — "
+                warnings.append(f"{h['title']} is {h['tier']} (you asked for {ctx['tier']}), "
                                 f"{'lift access for step-free needs' if ctx['needs'].get('step_free') else 'closest available'}.")
     # rest blocks for the youngest / oldest / tired
     why = rest_reason(ctx)
@@ -619,12 +663,13 @@ def plan(prefs: dict, start_date: date, rain: list | None = None) -> dict:
     ctx = make_ctx(prefs, start_date, days, route, rain)
     items = build_items(ctx, start_city, end_city, warnings)
     notes = optimise(items, ctx) if ctx["budget"] else []
+    warnings += ctx.pop("_route_notes", [])
     return {"route": route, "items": items, "notes": notes, "warnings": warnings, "ctx": ctx}
 
 
 # ---------------------------------------------------------------- pricing
 def live(i) -> bool:
-    return i.get("status", "planned") not in ("replaced", "cancelled")
+    return i.get("status", "planned") not in ("replaced", "cancelled", "dropped")
 
 
 def price(items: list, ctx) -> dict:
@@ -689,21 +734,21 @@ def optimise(items: list, ctx, frozen=(), kinds=("transport", "hotel", "activity
         # best saving per unit of "experience lost"
         _, saving, (kind, i, new) = max(moves, key=lambda m: m[1] / m[0])
         if kind == "transport":
-            notes.append(f"Switched {i['title'].split(' by ')[0].split(' flight')[0]} to {new['mode']} — saves {fmt_inr(gross(saving))}")
+            notes.append(f"Switched {i['title'].split(' by ')[0].split(' flight')[0]} to {new['mode']}, saves {fmt_inr(gross(saving))}")
             i.update(transport_item(new, i["day"], i["from_key"], i["dest_key"], i["meta"]["phase"]) | {"status": i.get("status", "planned")})
         elif kind == "hotel":
-            notes.append(f"{W['dests'][i['dest_key']]['name']}: {i['title']} → {new['title']} ({new['tier']}) — saves {fmt_inr(gross(saving))}")
+            notes.append(f"{W['dests'][i['dest_key']]['name']}: {i['title']} → {new['title']} ({new['tier']}), saves {fmt_inr(gross(saving))}")
             i.update({"offering_id": new["id"], "vendor_id": new["vendor_id"], "title": new["title"],
                       "unit_price": new["price"], "price": new["price"] * i["qty"] * i["nights"], "meta": {"tier": new["tier"]}})
         else:
-            notes.append(f"Dropped {i['title']} (day {i['day']}) — saves {fmt_inr(gross(saving))}")
+            notes.append(f"Dropped {i['title']} (day {i['day']}), saves {fmt_inr(gross(saving))}")
             i["status"] = "cancelled" if i.get("id") else "dropped"
     items[:] = [i for i in items if i.get("status") != "dropped"]
     p = price(items, ctx)
     if not p["within_budget"]:
-        notes.append(f"Still {fmt_inr(p['over_by'])} over budget — consider fewer days, fewer stops or a higher budget.")
+        notes.append(f"Still {fmt_inr(p['over_by'])} over budget, consider fewer days, fewer stops or a higher budget.")
     elif notes:
-        notes.append(f"Now {fmt_inr(p['total'])} — within your {fmt_inr(ctx['budget'])} budget.")
+        notes.append(f"Now {fmt_inr(p['total'])}, within your {fmt_inr(ctx['budget'])} budget.")
     return notes
 
 
@@ -734,13 +779,13 @@ def conflicts(items: list, ctx) -> list:
                             "text": f"Day {d}: {o['title']} is only open {o['open']}–{o['close']}."})
             why = act_allowed(o, ctx, d, members=item_members(i, ctx))
             if why:
-                out.append({"level": "error", "day": d, "item_id": i.get("id"), "text": f"Day {d}: {o['title']} — {why}."})
+                out.append({"level": "error", "day": d, "item_id": i.get("id"), "text": f"Day {d}: {o['title']}, {why}."})
             if o["dest_key"] != dest and not any(t["kind"] == "transport" and t["day"] == d for t in timed):
                 out.append({"level": "error", "day": d, "item_id": i.get("id"),
                             "text": f"Day {d}: {o['title']} is in {W['dests'][o['dest_key']]['name']}, but you're in {W['dests'][dest]['name']}."})
             if o["indoor_outdoor"] == "outdoor" and rain_on(ctx, o["dest_key"], d):
                 out.append({"level": "warn", "day": d, "item_id": i.get("id"),
-                            "text": f"Day {d}: rain forecast in {W['dests'][o['dest_key']]['name']} — {o['title']} is outdoors."})
+                            "text": f"Day {d}: rain forecast in {W['dests'][o['dest_key']]['name']}, {o['title']} is outdoors."})
     for i in items:
         if live(i) and i["kind"] in ("hotel", "transport"):
             o = off(i["offering_id"])

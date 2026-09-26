@@ -1,0 +1,9 @@
+# Render blueprint: New > Blueprint > pick this repo. Free plan, one web service.
+services:
+  - type: web
+    name: tourcraft
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/state
+    autoDeploy: true

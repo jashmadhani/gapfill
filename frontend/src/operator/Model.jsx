@@ -36,7 +36,7 @@ function Playground({ state }) {
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }))
   return (
     <Card className="p-4">
-      <div className="flex items-center gap-2"><FlaskConical size={16} className="text-rani-600" /><h2 className="font-bold">Playground — ask the model</h2></div>
+      <div className="flex items-center gap-2"><FlaskConical size={16} className="text-rani-600" /><h2 className="font-bold">Playground, ask the model</h2></div>
       <p className="text-xs text-stone-500">One person, one experience, one situation. Change anything and watch the prediction and its reasons move.</p>
       <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-3 text-sm">
@@ -76,7 +76,7 @@ function Playground({ state }) {
           {!out ? <Spinner /> : (
             <div className="space-y-3">
               <div className="flex items-end gap-3">
-                <div className="text-5xl font-bold">{out.veto ? '—' : `${out.fit}%`}</div>
+                <div className="text-5xl font-bold">{out.veto ? '-' : `${out.fit}%`}</div>
                 <div className="pb-1 text-sm text-stone-500">{out.veto ? <span className="text-red-700">Vetoed: {out.veto}</span> : <>predicted enjoyment · {out.score.toFixed(2)} / 5</>}</div>
               </div>
               <FitChips members={[{ ...out, name: 'Traveler', age: f.age }]} />
@@ -117,7 +117,7 @@ export default function Model() {
         <div className="flex items-center gap-2"><BrainCircuit size={16} className="text-rani-600" /><h2 className="font-bold">How TourCraft understands a group</h2></div>
         <ol className="mt-2 grid gap-2 text-sm text-stone-600 md:grid-cols-4">
           <li className="rounded-2xl bg-stone-50 p-3"><b className="text-stone-900">1 · Satisfaction model</b><br />Predicts how much <i>one</i> person (age, interests, needs, mood) will enjoy <i>one</i> place at a given time, crowd, heat and weather.</li>
-          <li className="rounded-2xl bg-stone-50 p-3"><b className="text-stone-900">2 · Crowd model</b><br />Forecasts how busy a place is by hour, weekday, month and weather. Drives “Overcrowded — go here instead”.</li>
+          <li className="rounded-2xl bg-stone-50 p-3"><b className="text-stone-900">2 · Crowd model</b><br />Forecasts how busy a place is by hour, weekday, month and weather. Drives “Overcrowded, go here instead”.</li>
           <li className="rounded-2xl bg-stone-50 p-3"><b className="text-stone-900">3 · Mood model</b><br />Reads free text (“the kids are cranky and it’s boiling”) into moods that re-weight the plan.</li>
           <li className="rounded-2xl bg-stone-50 p-3"><b className="text-stone-900">4 · Fair planner</b><br />Combines per-person predictions (60% average + 40% least-happy), applies hard safety rules, rest blocks and split tracks.</li>
         </ol>
@@ -211,8 +211,8 @@ export default function Model() {
                   return (
                     <tr key={e.text}>
                       <Td>“{e.text}”</Td>
-                      <Td className="text-xs">{e.expected.map((x) => MOOD[x]?.label || x).join(', ') || '—'}</Td>
-                      <Td className="text-xs"><span className={ok ? 'text-emerald-700' : 'text-amber-700'}>{e.predicted.map((x) => MOOD[x]?.label || x).join(', ') || '—'}</span></Td>
+                      <Td className="text-xs">{e.expected.map((x) => MOOD[x]?.label || x).join(', ') || '-'}</Td>
+                      <Td className="text-xs"><span className={ok ? 'text-emerald-700' : 'text-amber-700'}>{e.predicted.map((x) => MOOD[x]?.label || x).join(', ') || '-'}</span></Td>
                     </tr>
                   )
                 })}

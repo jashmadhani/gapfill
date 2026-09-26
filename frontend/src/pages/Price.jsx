@@ -61,7 +61,7 @@ export default function Price() {
             <div className="mt-3">
               <Bar value={p.total} max={p.budget} tone={p.within_budget ? 'green' : 'red'} />
               <div className={cx('mt-1 text-xs', p.within_budget ? 'text-emerald-700' : 'text-red-600')}>
-                {p.within_budget ? `Within your ${inr(p.budget)} budget — ${inr(p.budget - p.total)} to spare` : `${inr(p.over_by)} over your ${inr(p.budget)} budget`}
+                {p.within_budget ? `Within your ${inr(p.budget)} budget, ${inr(p.budget - p.total)} to spare` : `${inr(p.over_by)} over your ${inr(p.budget)} budget`}
                 {!p.within_budget && draft && <> · <Link to="/plan" className="underline">optimise</Link></>}
               </div>
             </div>

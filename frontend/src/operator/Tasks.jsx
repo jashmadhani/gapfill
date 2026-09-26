@@ -34,7 +34,7 @@ export default function Tasks() {
                 <Td><Chip tone={KIND[t.kind]?.[1]}>{KIND[t.kind]?.[0] || t.kind}</Chip></Td>
                 <Td className="max-w-lg">{t.text}</Td>
                 <Td>{t.tour_id && <Link to={`/operator/tours/${t.tour_id}`} className="font-semibold hover:underline">{t.tour_code}</Link>}</Td>
-                <Td className="text-xs">{t.vendor_id ? <Link to={`/vendor/${t.vendor_id}`} className="hover:underline">{t.vendor_name}</Link> : '—'}</Td>
+                <Td className="text-xs">{t.vendor_id ? <Link to={`/vendor/${t.vendor_id}`} className="hover:underline">{t.vendor_name}</Link> : '-'}</Td>
                 <Td className="whitespace-nowrap text-xs">{new Date(t.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</Td>
                 <Td>{t.status === 'open' ? <Button variant="secondary" className="px-2.5 py-1 text-xs" onClick={async () => { await api.taskDone(t.id); refresh() }}><Check size={13} /> Done</Button> : <Check size={15} className="text-emerald-600" />}</Td>
               </tr>

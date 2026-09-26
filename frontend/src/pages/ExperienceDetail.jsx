@@ -103,7 +103,7 @@ export default function ExperienceDetail() {
                 <Button onClick={add} disabled={busy}>{busy ? 'Adding…' : 'Add'}</Button>
               </div>
             )}
-            {tour.stage !== 'plan' && !inPlan && days.length > 0 && <p className="mt-2 text-xs text-stone-500">Your tour is booked — this is sent to {exp.vendor_name} for confirmation.</p>}
+            {tour.stage !== 'plan' && !inPlan && days.length > 0 && <p className="mt-2 text-xs text-stone-500">Your tour is booked, this is sent to {exp.vendor_name} for confirmation.</p>}
           </Card>
         )}
 

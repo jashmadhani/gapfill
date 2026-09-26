@@ -15,7 +15,7 @@ export default function Tours() {
   return (
     <div className="px-4 pt-5">
       <h1 className="text-2xl font-bold tracking-tight">Tours</h1>
-      <p className="text-sm text-stone-500">Open the traveler app as any customer — each tour is at a different lifecycle stage.</p>
+      <p className="text-sm text-stone-500">Open the traveler app as any customer, each tour is at a different lifecycle stage.</p>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <Link to="/operator" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><LayoutDashboard size={14} /> Operator</Link>
         <Link to="/vendor/1" className="flex items-center justify-center gap-1 rounded-lg bg-white p-2 ring-1 ring-stone-200"><Store size={14} /> Vendor</Link>

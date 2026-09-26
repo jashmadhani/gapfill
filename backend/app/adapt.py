@@ -134,7 +134,7 @@ def resequence(work, i, ctx, tour, st, indoor, taken, rank=0):
     cands.sort(key=lambda o: -P.act_score(o, ctx, day))
     found = 0
     for c in cands[:12]:
-        packed = P.pack([P.off(x["offering_id"]) for x in others] + [c], start, end, fixed=fixed)
+        packed = P.pack([P.off(x["offering_id"]) for x in others] + [c], start, end, P.day_anchor(ctx, day, work), fixed=fixed)
         if not packed:
             continue
         if found < rank:
@@ -185,7 +185,7 @@ def activity_swap(items, affected, ctx, rank=0, indoor=False, tour=None, st=None
                 else:
                     w.update(start_min=ch["start_min"], end_min=ch["end_min"])
         else:
-            pairs.append(({"op": "remove", "item_id": i["id"]}, f"Drop {i['title']} — nothing suitable fits that day"))
+            pairs.append(({"op": "remove", "item_id": i["id"]}, f"Drop {i['title']}, nothing suitable fits that day"))
             cur["status"] = "cancelled"
             lost += i["end_min"] - i["start_min"]
     gone = {c["item_id"] for c, _ in pairs if c["op"] in ("replace", "remove")}
@@ -215,7 +215,7 @@ def move_to_other_day(items, affected, ctx, tour, st, avoid_rain=True):
                 break
         if not placed:
             changes.append({"op": "remove", "item_id": i["id"]})
-            details.append(f"Drop {i['title']} — no free slot on another day in {P.W['dests'][i['dest_key']]['name']}")
+            details.append(f"Drop {i['title']}, no free slot on another day in {P.W['dests'][i['dest_key']]['name']}")
             lost += i["end_min"] - i["start_min"]
     return changes, details, lost
 
@@ -227,7 +227,7 @@ def repack_after(items, day_acts, start, ctx, end_extra=60):
     keep, best = [], []
     fixed = fixed_blocks(items, day_acts[0]["day"]) if day_acts else []
     for i in sorted(day_acts, key=lambda i: -P.act_score(P.off(i["offering_id"]), ctx)):
-        trial = P.pack([P.off(x["offering_id"]) for x in keep + [i]], start, end, fixed=fixed)
+        trial = P.pack([P.off(x["offering_id"]) for x in keep + [i]], start, end, P.day_anchor(ctx, day_acts[0]["day"], items), fixed=fixed)
         if trial:
             keep.append(i)
             best = trial
@@ -243,7 +243,7 @@ def shift_changes(packed, dropped):
             details.append(f"{i['title']}: {P.label(i['start_min'])} → {P.label(st)}")
     for i in dropped:
         changes.append({"op": "remove", "item_id": i["id"]})
-        details.append(f"Drop {i['title']} — no longer fits the day")
+        details.append(f"Drop {i['title']}, no longer fits the day")
         lost += i["end_min"] - i["start_min"]
     return changes, details, lost
 
@@ -261,7 +261,7 @@ def analyse_activities(kind, tour, items, affected, ctx, st, reason):
                  and x["id"] not in {a["id"] for a in affected}]
         if after:
             downstream.append({"item_id": after[0]["id"], "title": after[0]["title"], "when": f"Day {after[0]['day']} · {P.label(after[0]['start_min'])}",
-                               "why": "Keeps its time — replacement is fitted into the same window"})
+                               "why": "Keeps its time, replacement is fitted into the same window"})
     opts = []
     c, d, lost = activity_swap(items, affected, ctx, 0, indoor=rain, tour=tour, st=st)
     opts.append(finish_option("A", "Indoor swap" if rain else "Best replacement", "Replace with the best-fitting alternative in the same time window.",
@@ -277,7 +277,7 @@ def analyse_activities(kind, tour, items, affected, ctx, st, reason):
     lost = sum(i["end_min"] - i["start_min"] for i in affected)
     opts.append(finish_option("C", "Leave it free", "Cancel with a full refund and keep the time open.",
                               [{"op": "remove", "item_id": i["id"]} for i in affected], items, tour, st, ctx, cause, days, lost,
-                              [f"Cancel {i['title']} — full refund (disruption cover)" for i in affected]))
+                              [f"Cancel {i['title']}, full refund (disruption cover)" for i in affected]))
     return {"direct": direct, "downstream": downstream}, opts
 
 
@@ -293,7 +293,7 @@ def analyse_transport(kind, tour, items, t, ctx, st, minutes):
                "why": "Cancelled by the operator" if cancelled else f"Now arrives {P.label(new_arr)} ({minutes} min late)"}]
     downstream = [{"item_id": i["id"], "title": i["title"], "when": P.label(i["start_min"]), "why": "Starts before you'd arrive"} for i in hit]
     if hotel:
-        downstream.append({"item_id": hotel["id"], "title": hotel["title"], "when": "Check-in", "why": "Late check-in — hotel must hold the room"})
+        downstream.append({"item_id": hotel["id"], "title": hotel["title"], "when": "Check-in", "why": "Late check-in, hotel must hold the room"})
     notify = [{"op": "notify", "item_id": hotel["id"], "text": f"Late arrival ~{P.label(new_arr + 30)}, please hold the room"}] if hotel else []
     days = {t["day"]}
     opts = []
@@ -314,7 +314,7 @@ def analyse_transport(kind, tour, items, t, ctx, st, minutes):
         packed, dropped = repack_after(items, day_acts, q["arrive"] + 45, ctx)
         c, d, lost = shift_changes(packed, dropped)
         c = [{"op": "replace", "item_id": t["id"], "new": new, "text": new["title"]}] + c + notify
-        opts.append(finish_option("B" if len(opts) < 2 else "C", f"Switch to {m}", f"Rebook as {q['title'].split(' by ')[-1] if m != 'flight' else 'a flight'} — arrives {P.label(q['arrive'])}.",
+        opts.append(finish_option("B" if len(opts) < 2 else "C", f"Switch to {m}", f"Rebook as {q['title'].split(' by ')[-1] if m != 'flight' else 'a flight'}, arrives {P.label(q['arrive'])}.",
                                   c, items, tour, st, ctx, cause, days, lost, [f"{new['title']} · departs {P.label(q['depart'])}, arrives {P.label(q['arrive'])}"] + d))
     if not cancelled and hit and len(opts) < 3:
         c, d, lost = move_to_other_day(items, hit, ctx, tour, st)
@@ -332,7 +332,7 @@ def analyse_hotel(tour, items, h, ctx, st):
     same = sorted([a for a in alts if a["offering"]["tier"] == P.TIERS[cur]], key=lambda a: -a["score"])
     up = [a for a in alts if P.TIERS.index(a["offering"]["tier"]) == cur + 1]
     down = [a for a in alts if P.TIERS.index(a["offering"]["tier"]) == cur - 1]
-    direct = [{"item_id": h["id"], "title": h["title"], "when": f"Day {h['day']} · {h['nights']} night(s)", "why": "Hotel overbooked — room not available"}]
+    direct = [{"item_id": h["id"], "title": h["title"], "when": f"Day {h['day']} · {h['nights']} night(s)", "why": "Hotel overbooked, room not available"}]
     downstream = [{"item_id": None, "title": "Airport/station pickups", "when": "", "why": "Driver drop-off address changes"}]
     opts = []
 
@@ -348,7 +348,7 @@ def analyse_hotel(tour, items, h, ctx, st):
         return finish_option(key, label, summary, c, items, tour, st, ctx, "vendor", {h["day"]}, 0,
                              [f"{o['title']} · {o['tier']} · {o['rating']:.1f}★"], extra)
     if up:
-        opts.append(mk("A", "Free upgrade", f"Operator covers the difference — {up[0]['offering']['title']}.", up[0], keep_price=True))
+        opts.append(mk("A", "Free upgrade", f"Operator covers the difference, {up[0]['offering']['title']}.", up[0], keep_price=True))
     if same:
         opts.append(mk("B", "Similar hotel", "Same category, nearby.", same[0]))
     if down:
@@ -507,7 +507,7 @@ async def create_event(db, tour, kind, reason, impact, options, source="system")
                      options=mark_recommended(options), source=source)
     db.add(ev)
     await db.flush()
-    await add_task(db, "notify", f"{tour.code}: {LABELS.get(kind, kind)} — {reason[:120]}", tour.id, None, tour.coordinator_id)
+    await add_task(db, "notify", f"{tour.code}: {LABELS.get(kind, kind)}, {reason[:120]}", tour.id, None, tour.coordinator_id)
     return ev
 
 
@@ -541,7 +541,7 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
             impact, opts = analyse_activities("weather", tour, items, hit, ctx, st, reason)
             if ev := await create_event(db, tour, "weather", reason, impact, opts):
                 events.append(ev)
-        return events, None if events else f"Rain set for {P.W['dests'][dest]['name']} — no booked outdoor plans affected."
+        return events, None if events else f"Rain set for {P.W['dests'][dest]['name']}, no booked outdoor plans affected."
 
     if kind in ("unavailable", "vendor_declined"):
         affected_by_tour: dict[int, list] = {}
@@ -572,7 +572,7 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
                 if ids:
                     affected_by_tour[tour.id] = ids
             if not affected_by_tour:
-                note = f"{who} marked unavailable — no upcoming bookings affected."
+                note = f"{who} marked unavailable, no upcoming bookings affected."
         await db.flush()
         await P.load_world(db)
         for tid, ids in affected_by_tour.items():
@@ -614,7 +614,7 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
         if kind == "transport_cancel":
             reason = f"Your {t['meta'].get('mode', 'transfer')} {t['from_name'] if t.get('from_name') else P.W['dests'][t['from_key']]['name']} → {P.W['dests'][t['dest_key']]['name']} on day {t['day']} has been cancelled."
         else:
-            reason = (f"Your {t['meta'].get('mode', 'transfer')} to {P.W['dests'][t['dest_key']]['name']} (day {t['day']}) is running {minutes} min late — "
+            reason = (f"Your {t['meta'].get('mode', 'transfer')} to {P.W['dests'][t['dest_key']]['name']} (day {t['day']}) is running {minutes} min late, "
                       f"now arriving {P.label(t['end_min'] + minutes)} instead of {P.label(t['end_min'])}.")
         impact, opts = analyse_transport(kind, tour, items, t, ctx, st, minutes)
     elif kind == "hotel_issue":
@@ -628,7 +628,7 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
         minutes = int(body.get("minutes") or 45)
         impact, opts = analyse_late(tour, items, ctx, st, minutes)
         if not impact:
-            return [], "Nothing in the next stretch is affected — no changes needed."
+            return [], "Nothing in the next stretch is affected, no changes needed."
         reason = f"You're running about {minutes} min late. {len(impact['direct'])} upcoming plan{'s' if len(impact['direct']) > 1 else ''} would be affected."
     elif kind == "mood_change":
         moods = [m for m in (body.get("moods") or []) if m in ML_MOOD_LABEL]
@@ -636,15 +636,15 @@ async def run_trigger(db, body: dict, active_tour_id: int | None) -> tuple[list,
         impact, opts = analyse_mood(tour, items, ctx, st, moods)
         label = ", ".join(ML_MOOD_LABEL[m].lower() for m in moods) or "neutral"
         if not impact or not opts:
-            return [], f"Noted — everyone's feeling {label}. Today's plan already suits that."
-        reason = f"Everyone's feeling {label}. {len(impact['direct']) or 'None'} of the upcoming plans fit less well now — here's how to adapt."
+            return [], f"Noted, everyone's feeling {label}. Today's plan already suits that."
+        reason = f"Everyone's feeling {label}. {len(impact['direct']) or 'None'} of the upcoming plans fit less well now, here's how to adapt."
     elif kind == "budget_change":
         nb = float(body.get("new_budget") or 0)
         impact, opts = analyse_budget(tour, items, ctx, st, nb)
         if not impact:
             tour.prefs = {**tour.prefs, "budget": nb}
-            return [], f"Budget set to {P.fmt_inr(nb)} — your plan already fits."
-        reason = f"New budget {P.fmt_inr(nb)} — the tour is currently {P.fmt_inr(P.price(items, ctx)['total'])}. Here are three ways to fit it."
+            return [], f"Budget set to {P.fmt_inr(nb)}, your plan already fits."
+        reason = f"New budget {P.fmt_inr(nb)}, the tour is currently {P.fmt_inr(P.price(items, ctx)['total'])}. Here are three ways to fit it."
     else:
         return [], f"Unknown trigger {kind}"
     ev = await create_event(db, tour, kind, reason, impact, opts, body.get("source", "system"))
