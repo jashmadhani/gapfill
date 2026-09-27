@@ -7,6 +7,7 @@ import { api, fmtDate, inr } from "@/lib/api-client";
 import { PageBody, PageHero } from "@/components/page";
 import { Button, Card, Chip, Empty, Segmented, Sheet, Spinner, cx } from "@/components/ui";
 import DayTimeline from "@/components/day-timeline";
+import RouteMap from "@/components/route-map";
 import type { TripStage } from "@/lib/trip-helpers";
 import type { PlanDocument, Trip } from "@/types";
 
@@ -303,6 +304,8 @@ export default function TripPage() {
                 <CalendarRange size={16} aria-hidden />
                 {fullTrip ? "Show today only" : "Show full trip"}
               </button>
+
+              {plan && plan.days.length > 0 && <RouteMap key={plan.planId} days={plan.days} hotel={plan.hotel} considered={plan.considered} initialDay={today.idx} />}
 
               {fullTrip ? (
                 <div className="space-y-5">
