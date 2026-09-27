@@ -246,6 +246,15 @@ function TripPageInner() {
     return { idx, cards: data.plan.days[idx] ?? [] };
   }, [data]);
 
+  // The map's own day tabs used to drive only the map - the timeline/tickets below always stayed on
+  // "today" regardless of which day tab was tapped, so switching to Day 2 showed Day 1's activities.
+  // viewDay is the single source of truth for both now; it resets to "today" whenever the actual
+  // current day changes (trip reload, or a different trip switched to).
+  const [viewDay, setViewDay] = useState(0);
+  useEffect(() => {
+    if (today) setViewDay(today.idx);
+  }, [today?.idx, data?.trip?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!data) return <PageBody><Spinner /></PageBody>;
   const { trip, plan, stage, role } = data;
   const isAdmin = role !== "member";
@@ -366,7 +375,9 @@ function TripPageInner() {
                 {fullTrip ? "Show today only" : "Show full trip"}
               </button>
 
-              {plan && plan.days.length > 0 && <RouteMap key={plan.planId} days={plan.days} hotel={plan.hotel} considered={plan.considered} initialDay={today.idx} />}
+              {plan && plan.days.length > 0 && (
+                <RouteMap key={plan.planId} days={plan.days} hotel={plan.hotel} considered={plan.considered} day={viewDay} onDayChange={setViewDay} />
+              )}
 
               {fullTrip ? (
                 <div className="space-y-5">
@@ -383,12 +394,19 @@ function TripPageInner() {
                   ))}
                 </div>
               ) : (
-                <DayTimeline title={`Day ${today.idx + 1}`} dateLabel={dateLabelForDay(trip, today.idx)} cards={today.cards} editable now={new Date()} risks={trip.risks} />
+                <DayTimeline
+                  title={`Day ${viewDay + 1}`}
+                  dateLabel={dateLabelForDay(trip, viewDay)}
+                  cards={plan?.days[viewDay] ?? []}
+                  editable={viewDay >= today.idx}
+                  now={new Date()}
+                  risks={viewDay === today.idx ? trip.risks : []}
+                />
               )}
 
               {payments && <ApprovalCard data={payments} onChanged={load} />}
               <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} showReportButtons={false} />
-              <ReportChange trip={trip} day={today.idx + 1} isAdmin={isAdmin} onReported={load} onBudgetDone={(n) => { setNote(n); load(); }} />
+              <ReportChange trip={trip} day={viewDay + 1} isAdmin={isAdmin} onReported={load} onBudgetDone={(n) => { setNote(n); load(); }} />
               <Coordinator c={trip.coordinator} />
               <Changes trip={trip} />
               {!fullTrip && plan && plan.days[today.idx + 1] && (

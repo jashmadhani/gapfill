@@ -69,6 +69,8 @@ export default function RouteMap({
   dayLabels,
   className,
   initialDay = 0,
+  day: controlledDay,
+  onDayChange,
 }: {
   days: EventCard[][];
   hotel?: PlanHotel;
@@ -76,13 +78,22 @@ export default function RouteMap({
   dayLabels?: string[];
   className?: string;
   initialDay?: number;
+  /** Pass both to make the day tabs controlled (e.g. so a timeline shown below stays in sync with
+   * whichever day is selected here) - otherwise the map tracks its own day, uncontrolled. */
+  day?: number;
+  onDayChange?: (day: number) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<MLMap | null>(null);
   const markers = useRef<Marker[]>([]);
   const lib = useRef<typeof import("maplibre-gl") | null>(null);
   const [ready, setReady] = useState(false);
-  const [day, setDay] = useState(Math.min(initialDay, Math.max(0, days.length - 1)));
+  const [uncontrolledDay, setUncontrolledDay] = useState(Math.min(initialDay, Math.max(0, days.length - 1)));
+  const day = Math.min(controlledDay ?? uncontrolledDay, Math.max(0, days.length - 1));
+  const setDay = (i: number) => {
+    if (onDayChange) onDayChange(i);
+    else setUncontrolledDay(i);
+  };
   const [ghosts, setGhosts] = useState(true);
   const [picked, setPicked] = useState<{ type: "stop"; id: string } | { type: "ghost"; key: string } | null>(null);
   const [legsFor, setLegsFor] = useState<{ key: string; legs: Leg[] } | null>(null);

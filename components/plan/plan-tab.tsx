@@ -69,7 +69,11 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const aiEnd = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     api.get<{ trips: TripChip[] }>("/api/plan").then((r) => setTrips(r.trips)).catch(() => {});
@@ -89,6 +93,42 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
   useEffect(() => {
     aiEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [aiMessages, aiBusy]);
+
+  useEffect(() => () => recognitionRef.current?.stop(), []);
+
+  // Web Speech API - live everywhere Chromium/Android ships it; Safari (desktop and iOS) has no
+  // SpeechRecognition implementation at all, so this degrades to a clear message there instead of a dead button.
+  const toggleMic = () => {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setVoiceError("Voice input isn't supported in this browser yet - type your message instead.");
+      return;
+    }
+    setVoiceError(null);
+    const rec = new SR();
+    rec.lang = "en-IN";
+    rec.interimResults = true;
+    rec.continuous = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      setAiText(text);
+    };
+    rec.onerror = (e: { error?: string }) => {
+      setVoiceError(e?.error === "not-allowed" ? "Microphone access was denied - allow it in your browser settings to use voice input." : "Couldn't hear that - try again.");
+      setListening(false);
+    };
+    rec.onend = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
 
   const toggleTag = (k: string) => setTags((t) => (t.includes(k) ? t.filter((x) => x !== k) : [...t, k]));
   const canSubmit = destination.trim() && startDate && endDate && endDate >= startDate && !generating;
@@ -164,13 +204,16 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
               <input id="dest" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where to?" className={inputClass} />
             </div>
             <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
-              <div>
+              <div className="min-w-0">
                 <label htmlFor="start" className="mb-1.5 block text-sm font-semibold text-stone-700">From</label>
-                <input id="start" type="date" min={today()} value={startDate} onChange={(e) => { setStartDate(e.target.value); if (endDate && endDate < e.target.value) setEndDate(e.target.value); }} className={inputClass} />
+                {/* iOS Safari's native date control has its own intrinsic content width (day/month/year segments) that
+                    ignores a parent's w-full unless the input itself also gets min-w-0 - without it, this column
+                    pushes past the card's edge on narrower phones instead of shrinking. */}
+                <input id="start" type="date" min={today()} value={startDate} onChange={(e) => { setStartDate(e.target.value); if (endDate && endDate < e.target.value) setEndDate(e.target.value); }} className={cx(inputClass, "min-w-0 max-w-full")} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <label htmlFor="end" className="mb-1.5 block text-sm font-semibold text-stone-700">To</label>
-                <input id="end" type="date" min={startDate || today()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} />
+                <input id="end" type="date" min={startDate || today()} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={cx(inputClass, "min-w-0 max-w-full")} />
               </div>
             </div>
             <div>
@@ -241,6 +284,7 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
               <div ref={aiEnd} />
             </div>
           )}
+          {voiceError && <p className="rounded-2xl bg-red-50 px-3.5 py-2 text-sm font-medium text-red-700">{voiceError}</p>}
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -249,13 +293,17 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
             className="flex items-center gap-2 rounded-full bg-white py-1.5 pl-4 pr-1.5 shadow-float ring-1 ring-stone-200/70"
           >
             <Sparkles size={18} className="shrink-0 text-violet-500" aria-hidden />
-            <input value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="plan with AI" aria-label="Plan with AI" className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-stone-500 focus:outline-none" />
-            {aiText.trim() ? (
+            <input value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder={listening ? "Listening..." : "plan with AI"} aria-label="Plan with AI" className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-stone-500 focus:outline-none" />
+            {listening ? (
+              <button type="button" onClick={toggleMic} aria-label="Stop voice input" title="Listening... tap to stop" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-red-600 text-white">
+                <Mic size={16} className="animate-pulse" />
+              </button>
+            ) : aiText.trim() ? (
               <button type="submit" disabled={aiBusy} aria-label="Send" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rani-600 text-white disabled:opacity-50">
                 <Send size={16} />
               </button>
             ) : (
-              <button type="button" aria-label="Voice input (coming soon)" title="Voice input - coming soon" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rani-600 text-white">
+              <button type="button" onClick={toggleMic} aria-label="Voice input" title="Voice input" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rani-600 text-white">
                 <Mic size={16} />
               </button>
             )}
