@@ -17,13 +17,14 @@ export function stageOf(status: TripHydratedDocument["status"]): TripStage {
  * draft. Mirrors gapfill's single-active-tour model without hard-coding it -
  * a user can still hold several trips (surfaced on the Plan tab). */
 export async function resolveCurrentTrip(userId: string): Promise<TripHydratedDocument | null> {
-  const active = await TripModel.findOne({ userId, status: "active" }).sort({ startDate: 1 });
+  const mine = { $or: [{ userId }, { memberIds: userId }] };
+  const active = await TripModel.findOne({ ...mine, status: "active" }).sort({ startDate: 1 });
   if (active) return active;
-  const upcoming = await TripModel.findOne({ userId, status: "upcoming" }).sort({ startDate: 1 });
+  const upcoming = await TripModel.findOne({ ...mine, status: "upcoming" }).sort({ startDate: 1 });
   if (upcoming) return upcoming;
-  const planning = await TripModel.findOne({ userId, status: "planning" }).sort({ updatedAt: -1 });
+  const planning = await TripModel.findOne({ ...mine, status: "planning" }).sort({ updatedAt: -1 });
   if (planning) return planning;
-  return TripModel.findOne({ userId, status: "completed" }).sort({ endDate: -1 });
+  return TripModel.findOne({ ...mine, status: "completed" }).sort({ endDate: -1 });
 }
 
 export async function getActivePlanForTrip(tripId: string): Promise<PlanHydratedDocument | null> {

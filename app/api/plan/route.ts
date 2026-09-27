@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
 
   await connectToDatabase();
   const userId = user._id.toString();
-  const trips = await TripModel.find({ userId, status: { $in: ["planning", "upcoming"] } }).sort({ startDate: 1 });
+  const trips = await TripModel.find({ $or: [{ userId }, { memberIds: user._id }], status: { $in: ["planning", "upcoming"] } }).sort({ startDate: 1 });
 
   if (trips.length === 0) return NextResponse.json({ trips: [], trip: null, plan: null });
 
@@ -27,9 +27,10 @@ export async function GET(req: NextRequest) {
   const plan = await getActivePlanForTrip(selected._id.toString());
 
   return NextResponse.json({
-    trips: trips.map((t) => ({ id: t._id.toString(), title: t.title, status: t.status, startDate: t.startDate, coverImageUrl: t.coverImageUrl })),
+    trips: trips.map((t) => ({ id: t._id.toString(), title: t.title, status: t.status, startDate: t.startDate, coverImageUrl: t.coverImageUrl, role: t.userId.toString() === userId ? "admin" : "member" })),
     trip: toSafeTrip(selected),
     plan: plan ? toSafePlan(plan) : null,
+    role: selected.userId.toString() === userId ? "admin" : "member",
   });
 }
 
@@ -111,7 +112,11 @@ export async function PATCH(req: NextRequest) {
   const body = (await req.json()) as PatchBody;
   await connectToDatabase();
   const trip = await TripModel.findOne({ _id: body.tripId, userId: user._id });
-  if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  if (!trip) {
+    const shared = await TripModel.exists({ _id: body.tripId, memberIds: user._id });
+    if (shared) return NextResponse.json({ error: "Only the trip admin can change the plan. Suggest it to the group instead." }, { status: 403 });
+    return NextResponse.json({ error: "Trip not found" }, { status: 404 });
+  }
   const plan = await getActivePlanForTrip(trip._id.toString());
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 

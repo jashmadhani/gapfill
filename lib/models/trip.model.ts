@@ -17,7 +17,15 @@ import type {
 
 export interface TripDoc {
   tripId: string;
+  /** The trip's admin: the only account that can change the plan. */
   userId: mongoose.Types.ObjectId;
+  /** Friends who joined the trip. They can view the plan, suggest places and vote, not change it. */
+  memberIds: mongoose.Types.ObjectId[];
+  inviteCode?: string;
+  /** Ideas from the group for the admin to review: { id, userId, userName, name, note, status, createdAt }. */
+  suggestions: Record<string, unknown>[];
+  /** Who voted for what: { [suggestionId or left-out place key]: userId[] }. */
+  votes: Record<string, string[]>;
 
   title: string;
   code: string;
@@ -56,6 +64,10 @@ const TripSchema = new Schema<Record<string, unknown>>(
   {
     tripId: { type: String, required: true, unique: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    memberIds: { type: [Schema.Types.ObjectId], default: [], index: true },
+    inviteCode: { type: String, index: true, sparse: true },
+    suggestions: { type: [Schema.Types.Mixed], default: [] },
+    votes: { type: Schema.Types.Mixed, default: () => ({}) },
 
     title: { type: String, required: true },
     code: { type: String, required: true },

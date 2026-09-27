@@ -1,19 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { TripModel } from "@/lib/models/trip.model";
 
-export async function GET(req: NextRequest) {
-  const user = await requireUser(req);
+/** Every trip this account is part of, with its role in each (for the Profile tab). */
+export async function GET() {
+  const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-
   await connectToDatabase();
-  const status = req.nextUrl.searchParams.get("status");
-  const query: Record<string, unknown> = { $or: [{ userId: user._id }, { memberIds: user._id }] };
-  if (status) query.status = status;
-
-  const trips = await TripModel.find(query).sort({ startDate: -1 }).lean();
-
+  const trips = await TripModel.find({ $or: [{ userId: user._id }, { memberIds: user._id }] }).sort({ startDate: -1 }).lean();
   return NextResponse.json({
     trips: trips.map((t) => ({
       id: t._id.toString(),
@@ -22,7 +17,8 @@ export async function GET(req: NextRequest) {
       status: t.status,
       startDate: t.startDate,
       endDate: t.endDate,
-      themeTags: t.themeTags,
+      role: t.userId.toString() === user._id.toString() ? "admin" : "member",
+      people: 1 + (t.memberIds?.length ?? 0),
     })),
   });
 }

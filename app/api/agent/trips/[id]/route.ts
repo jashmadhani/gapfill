@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { id } = await params;
   await connectToDatabase();
-  const trip = id === "current" ? await resolveCurrentTrip(user._id.toString()) : await TripModel.findOne({ _id: id, userId: user._id });
+  const trip = id === "current" ? await resolveCurrentTrip(user._id.toString()) : await TripModel.findOne({ _id: id, $or: [{ userId: user._id }, { memberIds: user._id }] });
   if (!trip) return NextResponse.json({ error: "Trip not found" }, { status: 404 });
 
   const plan = await getActivePlanForTrip(trip._id.toString());
