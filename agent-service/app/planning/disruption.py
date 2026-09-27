@@ -10,7 +10,7 @@ Group fit comes from the same satisfaction model the planner uses, with rain and
 from datetime import date, datetime
 
 from ..next_client import NextClient
-from .catalog import to_place
+from .catalog import live_to_place, to_place
 from .fit import day_date, evaluate, normalise_members
 
 LABELS = {"weather": "Weather alert", "running_late": "Running late", "unavailable": "No longer available",
@@ -218,10 +218,31 @@ def from_mood(d: Day, proposals: list[dict], moods: list[str]) -> dict | None:
 
 
 # ---------------------------------------------------------------- I/O
+def _pool_from_cards(cards_by_day: list[list[dict]], pool: dict[str, dict]) -> dict[str, dict]:
+    """Non-catalog destinations have no /api/agent/catalog pool to swap within - rebuild one from the
+    plan's OWN cards instead, so "it's raining"/"running late" have somewhere to look for an
+    indoor/later alternative even when the trip isn't in the curated 12. Cards from a plan generated
+    before this fix carry poiId: None and are silently skipped (a known limitation, not a crash)."""
+    for cards in cards_by_day:
+        for c in cards:
+            poi_id = c.get("poiId")
+            if not poi_id or poi_id in pool or c.get("type") != "activity":
+                continue
+            loc = c.get("location") or {}
+            place = live_to_place({"name": c["title"], "lat": loc.get("lat", 0), "lng": loc.get("lng", 0), "categories": [c.get("activityType")] if c.get("activityType") else []},
+                                   c.get("durationMin") or 60, c.get("typicalSpend") or 0)
+            place["id"] = place["poiId"] = place["ml"]["id"] = poi_id
+            if c.get("rating"):
+                place["rating"] = c["rating"]
+            pool[poi_id] = place
+    return pool
+
+
 async def load_days(client: NextClient, rain_days: set[int] | None = None, moods=None, trip: str = "current") -> tuple[dict, list[Day]]:
     data = await client.get("/api/agent/plan-cards", {"trip": trip})
     catalog = await client.get("/api/agent/catalog", {"q": data["destination"]}) if data.get("days") else {"pois": []}
     pool = {p["id"]: to_place(p) | {"poiId": p["id"]} for p in catalog.get("pois", [])}
+    pool = _pool_from_cards(data.get("days") or [], pool)
     members = normalise_members(data.get("members"), data.get("groupType", "solo"), data.get("themeTags", []))
     days = [Day(members, cards, pool, day_date(data["startDate"], i), data.get("themeTags", []), rain=(i + 1) in (rain_days or set()), moods=moods)
             for i, cards in enumerate(data.get("days") or [])]
@@ -240,8 +261,10 @@ async def run_trigger(client: NextClient, trigger: dict, source: str = "travelle
     data, days = await load_days(client, rain_days={day or 1} if kind == "weather" else None, trip=trigger.get("tripId") or "current")
     if not days:
         return {"message": "There's no plan yet to adjust."}
-    if not data.get("days") or not days[0].pool:
-        return {"message": "This destination has no curated experiences to re-plan with."}
+    if not data.get("days"):
+        return {"message": "There's no plan yet to adjust."}
+    if not days[0].pool:
+        return {"message": "This plan was made before live re-planning was added here - regenerate it to enable this."}
     idx = max(0, min((day or 1) - 1, len(days) - 1))
     if kind == "weather":
         event = analyse_weather(days[idx])

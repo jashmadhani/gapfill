@@ -12,6 +12,7 @@ from ..ml import infer as ML
 from ..next_client import NextClient
 from ..nugen import mood as nugen_mood
 from .catalog import to_place
+from .disruption import _pool_from_cards
 from .fit import day_date, evaluate, normalise_members
 
 DROP_TO_FLAG = 8  # a stop whose group fit falls by this many points under the mood is flagged
@@ -85,10 +86,10 @@ async def mood_check_in(client: NextClient, text: str, day: int | None = None) -
         return {"moods": moods, "source": source, "message": "There's no plan yet to adjust."}
     index = max(0, min((day or 1) - 1, len(days) - 1))
     catalog = await client.get("/api/agent/catalog", {"q": data["destination"]})
-    if not catalog.get("pois"):
-        return {"moods": moods, "source": source, "message": "This destination has no curated experiences to re-score."}
-
-    pool = {p["id"]: to_place(p) | {"poiId": p["id"]} for p in catalog["pois"]}
+    pool = {p["id"]: to_place(p) | {"poiId": p["id"]} for p in catalog.get("pois", [])}
+    pool = _pool_from_cards(days, pool)
+    if not pool:
+        return {"moods": moods, "source": source, "message": "This plan was made before live re-scoring was added here - regenerate it to enable this."}
     members = normalise_members(data.get("members"), data.get("groupType", "solo"), data.get("themeTags", []))
     result = analyse(members, days[index], pool, on=day_date(data["startDate"], index), theme_tags=data.get("themeTags", []), moods=moods)
     # Store the proposals as a change event so the trip admin can apply them with one tap.

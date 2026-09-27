@@ -1,4 +1,7 @@
+import re
+
 from fastapi import FastAPI, Header, HTTPException
+from groq import APIStatusError as GroqAPIStatusError
 from pydantic import BaseModel, Field
 
 from .agent import build_agent, build_intake_agent, extract_finalize_intake, extract_navigate, sanitize_reply, summarize_tool_calls
@@ -18,6 +21,21 @@ def _extract_token(authorization: str | None) -> str:
     return authorization.removeprefix("Bearer ")
 
 
+def friendly_llm_error(exc: Exception) -> str:
+    """Groq being rate-limited or briefly down is common on a free/demo key and is not a bug in this service -
+    say so plainly instead of a generic 500 the caller has no way to act on (which is what Next's own fallback,
+    'I couldn't reach the assistant service', was actually masking)."""
+    if isinstance(exc, GroqAPIStatusError) and exc.status_code == 429:
+        m = re.search(r"try again in ([\d.]+)s", str(exc))
+        if m:
+            minutes = max(1, round(float(m.group(1)) / 60))
+            return f"The AI model has hit its daily free-tier limit. Try again in about {minutes} minute{'s' if minutes != 1 else ''}."
+        return "The AI model has hit its daily free-tier limit. Try again in a few minutes."
+    if isinstance(exc, GroqAPIStatusError):
+        return f"The AI service returned an error ({exc.status_code}). Please try again in a moment."
+    return "Something went wrong reaching the AI model. Please try again in a moment."
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True}
@@ -35,7 +53,10 @@ async def chat(body: AgentChatRequest, authorization: str | None = Header(defaul
     messages = [{"role": turn.role, "content": turn.content} for turn in body.history]
     messages.append({"role": "user", "content": redact(body.message)[0]})
 
-    result = await agent.ainvoke({"messages": messages})
+    try:
+        result = await agent.ainvoke({"messages": messages})
+    except Exception as exc:
+        return AgentChatResponse(reply=friendly_llm_error(exc), navigate=None, toolCalls=[])
     reply = sanitize_reply(result["messages"][-1].content)
 
     return AgentChatResponse(
@@ -116,7 +137,10 @@ async def plan_intake(body: PlanIntakeRequest, authorization: str | None = Heade
     agent = build_intake_agent()
     messages = [{"role": turn.role, "content": turn.content} for turn in body.history]
     messages.append({"role": "user", "content": redact(body.message)[0]})
-    result = await agent.ainvoke({"messages": messages})
+    try:
+        result = await agent.ainvoke({"messages": messages})
+    except Exception as exc:
+        return PlanIntakeResponse(reply=friendly_llm_error(exc), complete=False)
 
     finalize = extract_finalize_intake(result["messages"])
     reply = sanitize_reply(result["messages"][-1].content)

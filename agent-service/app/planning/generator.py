@@ -10,7 +10,7 @@ function takes a NextClient the same way the other agent-service tools do."""
 from datetime import datetime, timedelta
 
 from ..next_client import NextClient
-from .catalog import build_considered, excluded_reason, fit_reason, score_catalog_place, to_place, trip_weekdays
+from .catalog import build_considered, excluded_reason, fit_reason, live_to_place, score_catalog_place, to_place, trip_weekdays
 from .geo import centroid, haversine_km
 from .scoring import score_candidates
 from .sequencing import _typical_spend, build_day, select_hotel, simple_kmeans
@@ -98,10 +98,10 @@ async def generate_plan(client: NextClient, destination: str, start_date: str, e
     scored = score_candidates(_clean(places), theme_tags, center) if places else []
     food = [p for p in scored if p["is_food"]]
     excluded: list[tuple[dict, str]] = []
+    travellers = normalise_members(members, group_type, theme_tags)
+    first_day = day_date(start_date, 0)
     if catalog:
         weekdays = trip_weekdays(start_date, num_days)
-        travellers = normalise_members(members, group_type, theme_tags)
-        first_day = day_date(start_date, 0)
         eligible: list[dict] = []
         for raw in catalog["pois"]:
             place = to_place(raw)
@@ -121,6 +121,17 @@ async def generate_plan(client: NextClient, destination: str, start_date: str, e
     else:
         activities = [p for p in scored if not p["is_food"]]
     top_activities = activities[:slots]
+
+    if not catalog:
+        # Not a curated destination, but the traveller still gets a real per-person fit: score the stops that
+        # actually made the plan with the SAME satisfaction model, using category-derived generic attrs
+        # (planning/dwell.py:default_ml_attrs) in place of the curated catalog's hand-set ones. Only the chosen
+        # slots are scored (not every candidate) - this is what shows up as fit chips on the day timeline.
+        for p in top_activities:
+            live = live_to_place(p, estimate_dwell_minutes(p.get("categories", []))["typical"], _typical_spend(p.get("categories", [])))
+            fit = evaluate(travellers, live, on=first_day, start_min=int(live["prefHour"] * 60), theme_tags=theme_tags)
+            p["poiId"], p["memberFits"], p["groupFit"], p["crowd"] = live["poiId"], fit["members"], fit["group"], fit["crowd"]
+            p["fitReason"] = fit_reason(live, theme_tags) if not p.get("fitReason") else p["fitReason"]
 
     clusters = simple_kmeans(top_activities, num_days)
     while len(clusters) < num_days:
@@ -159,10 +170,10 @@ async def generate_plan(client: NextClient, destination: str, start_date: str, e
         considered = _considered_from_live(activities, top_activities, slots, theme_tags)
         total_seen = len(places)
 
-    fit_summary = summarise(travellers, [c for day in days for c in day]) if catalog else None
+    fit_summary = summarise(travellers, [c for day in days for c in day])
 
     return {
-        "members": travellers if catalog else [],
+        "members": travellers,
         "fitSummary": fit_summary,
         "days": days,
         "hotel": hotel,

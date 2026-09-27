@@ -185,3 +185,25 @@ def _entry(p: dict, rank: int | None, reasons: list[str], verdict: str) -> dict:
         "verdict": verdict,
         "reasons": reasons,
     }
+
+
+def live_to_place(p: dict, dwell_min: int, spend: int) -> dict:
+    """A live (Geoapify) candidate, in the same shape to_place() produces for a curated place, using
+    dwell.default_ml_attrs() for everything the catalog would normally supply. Lets the SAME satisfaction/crowd
+    models, and the SAME disruption/mood engines, run on any destination - not only the curated 12 cities."""
+    from hashlib import md5
+
+    from .dwell import default_ml_attrs
+
+    attrs = default_ml_attrs(p.get("categories") or [])
+    poi_id = "live_" + md5(f"{p.get('name')}{p['lat']:.4f}{p['lng']:.4f}".encode()).hexdigest()[:12]
+    return {
+        "id": poi_id, "poiId": poi_id, "name": p.get("name") or "Stop", "lat": p["lat"], "lng": p["lng"],
+        "categories": p.get("categories") or [], "activityType": attrs["category"], "dwellMin": dwell_min,
+        "spend": spend, "price": spend, "rating": 0, "ratingCount": 0, "tags": [], "description": "",
+        "imageUrl": None, "indoorOutdoor": attrs.pop("_indoorOutdoor"), "stepFree": attrs["stairs"] < 0.4,
+        "kidFriendly": attrs["kidFriendly"], "closedWeekdays": [], "minAge": attrs["minAge"],
+        "prefHour": {"morning": 9.0, "afternoon": 13.0, "evening": 17.0}.get(attrs["bestTime"], 11.0),
+        "openMin": attrs["openMin"], "closeMin": attrs["openMin"] + attrs["openWindowMin"], "address": p.get("address"),
+        "ml": {"id": poi_id, **attrs, "duration_min": dwell_min, "price": spend},
+    }
