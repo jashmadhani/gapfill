@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "export-agent-schemas": "node scripts/export-agent-schemas.mjs"
   },
   "dependencies": {
     "@imagekit/nodejs": "^7.12.1",

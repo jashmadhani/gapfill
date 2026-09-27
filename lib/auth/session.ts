@@ -1,6 +1,8 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import type { NextRequest } from "next/server";
 import { connectToDatabase } from "@/lib/db/mongoose";
+import { verifyAgentServiceToken } from "@/lib/auth/agent-jwt";
 import { UserModel, type UserHydratedDocument } from "@/lib/models/user.model";
 import type { User } from "@/types";
 
@@ -62,11 +64,25 @@ export async function getSessionFromCookies(): Promise<SessionPayload | null> {
 
 /** API-route helper: resolves the authenticated user's hydrated Mongoose doc,
  * or null if there is no valid session. Connects to the DB itself so routes
- * don't need to remember to call connectToDatabase() first. */
-export async function requireUser(): Promise<UserHydratedDocument | null> {
+ * don't need to remember to call connectToDatabase() first.
+ *
+ * Pass the route's `req` to also accept the short-lived agent-service Bearer
+ * token (see agent-jwt.ts) - the handful of /api/agent/* routes the Python
+ * assistant calls back into use this same helper, so they don't need a
+ * separate auth path. A present-but-invalid bearer token is rejected outright
+ * rather than falling back to the cookie, since a caller presenting one is
+ * asserting it's the agent service, not a browser. */
+export async function requireUser(req?: NextRequest): Promise<UserHydratedDocument | null> {
+  await connectToDatabase();
+
+  const bearer = req?.headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
+  if (bearer) {
+    const agentSession = await verifyAgentServiceToken(bearer);
+    return agentSession ? UserModel.findById(agentSession.sub) : null;
+  }
+
   const session = await getSessionFromCookies();
   if (!session) return null;
-  await connectToDatabase();
   return UserModel.findById(session.sub);
 }
 

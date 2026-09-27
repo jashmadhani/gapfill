@@ -86,7 +86,6 @@ export async function POST(req: NextRequest) {
     alternatives: [],
     conflicts: [],
     notes: [],
-    chatHistory: [],
   });
 
   return NextResponse.json({ trip: toSafeTrip(trip) }, { status: 201 });

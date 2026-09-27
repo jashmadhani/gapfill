@@ -199,9 +199,6 @@ export async function ensureDemoTripForUser(userId: string): Promise<TripHydrate
       "Kept mornings light after a late travel day into Jaipur.",
       "Grouped heritage sites together to avoid backtracking across town.",
     ],
-    chatHistory: [
-      { role: "assistant", text: "Hi! I'm your trip assistant. Ask me to swap something, check spend, or tell me your day changed and I'll adjust the plan.", at: new Date().toISOString() },
-    ],
   });
 
   return trip;

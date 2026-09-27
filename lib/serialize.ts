@@ -112,7 +112,6 @@ export function toSafePlan(doc: PlanHydratedDocument): PlanDocument {
     alternatives: obj.alternatives ?? [],
     conflicts: obj.conflicts ?? [],
     notes: obj.notes ?? [],
-    chatHistory: obj.chatHistory ?? [],
     createdAt: obj.createdAt?.toISOString?.() ?? obj.createdAt,
     modifiedAt: obj.modifiedAt?.toISOString?.() ?? obj.modifiedAt,
   };

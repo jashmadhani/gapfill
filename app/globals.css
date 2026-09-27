@@ -154,6 +154,12 @@ body {
   animation: pulse-ring 1.4s ease-out infinite;
 }
 
+/* Warm violet smudge behind the Ask tab's empty-state suggestions - the one
+   deliberately-warm accent against an otherwise all-blue app. */
+.assist-glow {
+  background: radial-gradient(38rem 22rem at 50% 100%, color-mix(in oklab, #8b5cf6 16%, transparent) 0%, transparent 70%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important;

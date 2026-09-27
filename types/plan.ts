@@ -7,12 +7,6 @@ export type EventCardType = "travel" | "activity" | "meal" | "rest" | "accommoda
  * engine outcomes for a card that used to hold a real booking. */
 export type EventCardStatus = "suggested" | "confirmed" | "pending" | "disrupted" | "replaced" | "dismissed";
 
-export interface ChatMessage {
-  role: "user" | "assistant" | "debug";
-  text: string;
-  at: ISODateTime;
-}
-
 export interface EventCard {
   itemId: string; // short id, stable across cascade_resolve reflows within one plan version
   type: EventCardType;
@@ -66,9 +60,10 @@ export type PlanStatus = "active" | "superseded" | "discarded";
  * from, flips the old doc's status to superseded/discarded, and the new
  * doc's status to active - a linked-list version chain, not an embedded
  * array on Trip. Kept as its own collection (not embedded in Trip) because
- * each version carries a full day-by-day itinerary plus chat history, which
- * would blow past sane document-size growth if piled onto one Trip doc
- * across a whole trip's worth of edits.
+ * each version carries a full day-by-day itinerary, which would blow past
+ * sane document-size growth if piled onto one Trip doc across a whole
+ * trip's worth of edits. Chat with the assistant lives separately in
+ * ChatSession (see chat.ts) - it's about the user, not one plan version.
  */
 export interface PlanDocument {
   _id: Id;
@@ -88,7 +83,6 @@ export interface PlanDocument {
   alternatives: Record<string, unknown>[];
   conflicts: PlanConflict[];
   notes: string[]; // "how we optimised this" bullets shown under the price card
-  chatHistory: ChatMessage[];
 
   createdAt: ISODateTime;
   /** When this exact version's content was last mutated in place (should be
