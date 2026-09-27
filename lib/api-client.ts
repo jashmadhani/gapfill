@@ -4,6 +4,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && typeof window !== "undefined" && !window.location.pathname.startsWith("/auth") && !window.location.pathname.startsWith("/join")) {
+    // The session ended (signed out, expired, or belongs to a different database). Go to sign-in and come back here,
+    // instead of leaving an unhandled "Not signed in" error on screen. The promise stays pending, so no error is thrown.
+    window.location.assign(`/auth/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+    return new Promise<T>(() => {});
+  }
   if (!res.ok) throw new Error(body.error || `Request to ${url} failed`);
   return body as T;
 }
