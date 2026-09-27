@@ -49,6 +49,15 @@ export interface EventCard {
   };
 }
 
+export type ConflictLevel = "error" | "warning";
+
+/** A validation line surfaced under "Checks" (gapfill's `conflicts`) - e.g.
+ * "Day 3 has no lunch stop" or "Total exceeds budget by ₹4,000". */
+export interface PlanConflict {
+  level: ConflictLevel;
+  text: string;
+}
+
 export type PlanStatus = "active" | "superseded" | "discarded";
 
 /**
@@ -77,6 +86,8 @@ export interface PlanDocument {
   narrative: string; // human-readable "what changed and why" for this version
   changeReason?: string; // e.g. "User requested: more outdoors", "Disruption: vendor closed"
   alternatives: Record<string, unknown>[];
+  conflicts: PlanConflict[];
+  notes: string[]; // "how we optimised this" bullets shown under the price card
   chatHistory: ChatMessage[];
 
   createdAt: ISODateTime;

@@ -26,9 +26,25 @@ export interface UserPreferences {
   homeCurrency: Currency;
 }
 
+export type AuthProvider = "credentials" | "google" | "github" | string;
+
+/**
+ * One OAuth identity linked to this user. A user can hold both a
+ * passwordHash (registered with credentials) AND entries here (later
+ * connected Google/etc) - or only one of the two. providerAccountId is
+ * that provider's stable subject id (Google's `sub`), used to find the
+ * user on subsequent OAuth logins without relying on email matching alone.
+ */
+export interface LinkedAccount {
+  provider: AuthProvider;
+  providerAccountId: string;
+  linkedAt: ISODateTime;
+}
+
 export interface AuthInfo {
-  passwordHash: string;
-  provider: "credentials" | "google" | "github" | string;
+  /** Absent for a user who has only ever signed in via OAuth. */
+  passwordHash?: string;
+  linkedAccounts: LinkedAccount[];
   emailVerified: boolean;
   lastLoginAt?: ISODateTime;
 }
@@ -54,6 +70,13 @@ export interface User {
   emergencyContact?: EmergencyContact;
   phoneNumber?: string; // links a location-recogniser session (keyed by phone) back to this user
   lastKnownLocation?: LastKnownLocation;
+  /** From an OAuth provider (e.g. Google's picture) or a user upload, mirrored
+   * into our own ImageKit account (Home/toure/userAvatars) rather than hot-linked,
+   * so it survives the provider revoking/expiring the original URL. */
+  avatarUrl?: string;
+  /** ImageKit fileId backing avatarUrl, so a later re-sync/replace can
+   * overwrite the same asset instead of orphaning the old one. */
+  avatarImageKitFileId?: string;
   /**
    * Denormalized convenience cache of this user's trip ids, newest first.
    * Not authoritative - `trips` collection (queried by userId, indexed) is
@@ -61,6 +84,9 @@ export interface User {
    * a missed push here just means a slightly stale list, never data loss.
    */
   tripIds?: Id[];
+  /** POI ids the user has hearted on Discover - small enough to keep denormalized
+   * on the user doc rather than a separate collection. */
+  savedPoiIds?: Id[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }

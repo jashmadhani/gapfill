@@ -44,6 +44,7 @@ export interface POI {
   geo: GeoJSONPoint; // mirror of `location`, 2dsphere-indexed for $near queries
   locationKey?: string; // stable short key for static travel-time lookups (gapfill legacy areas)
   areaId?: Id; // ref -> Area
+  imageUrl?: string;
 
   openingHours: WeeklyOpeningHours;
   typicalDwellMin: DwellTime;

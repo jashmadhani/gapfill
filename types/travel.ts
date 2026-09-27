@@ -11,8 +11,10 @@ export interface AdvisorySummary {
  * advisories (trip-planner's Area). */
 export interface Area {
   _id: Id;
-  areaId: string;
+  areaId: string; // stable slug, e.g. "udaipur" - used as the Discover destination key
   name: string;
+  region: string;
+  imageUrl?: string;
   advisorySummary?: AdvisorySummary;
 }
 
