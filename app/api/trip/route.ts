@@ -2,23 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { accessFor } from "@/lib/group";
+import { TripModel } from "@/lib/models/trip.model";
 import { getActivePlanForTrip, resolveCurrentTrip, stageOf } from "@/lib/trip-helpers";
 import { toSafePlan, toSafeTrip } from "@/lib/serialize";
 
-export async function GET() {
+/** resolveCurrentTrip() picks one trip account-wide (active, else soonest-upcoming, else most-recent draft) - with
+ * more than one active/upcoming trip that guess is often wrong (it picks whichever starts soonest, not whichever
+ * the traveller actually opened). ?tripId= lets the page ask for a specific one explicitly; the switcher chips
+ * (built from `others`) let the traveller move between every trip that's actually live/booked without guessing. */
+export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   await connectToDatabase();
-  const trip = await resolveCurrentTrip(user._id.toString());
-  if (!trip) return NextResponse.json({ trip: null, plan: null, stage: null, role: null });
+  const userId = user._id.toString();
+  const requested = req.nextUrl.searchParams.get("tripId");
+  const trip = requested ? (await accessFor(requested, userId))?.trip ?? null : await resolveCurrentTrip(userId);
+
+  const live = await TripModel.find({ $or: [{ userId }, { memberIds: user._id }], status: { $in: ["upcoming", "active"] } })
+    .sort({ startDate: 1 })
+    .lean();
+  const others = live.map((t) => ({ id: t._id.toString(), title: t.title, status: t.status, startDate: t.startDate }));
+
+  if (!trip) return NextResponse.json({ trip: null, plan: null, stage: null, role: null, others });
 
   const plan = await getActivePlanForTrip(trip._id.toString());
   return NextResponse.json({
     trip: toSafeTrip(trip),
     plan: plan ? toSafePlan(plan) : null,
     stage: stageOf(trip.status),
-    role: trip.userId.toString() === user._id.toString() ? "admin" : "member",
+    role: trip.userId.toString() === userId ? "admin" : "member",
+    others,
   });
 }
 

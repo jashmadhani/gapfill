@@ -143,7 +143,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                   <span className="block text-sm font-semibold text-white/70">This trip is booked</span>
                   <span className="block text-[15px]">Today&apos;s plan, tickets and live changes are on the Trip tab.</span>
                 </span>
-                <Link href="/trip" className="inline-block shrink-0">
+                <Link href={`/trip?tripId=${trip._id}`} className="inline-block shrink-0">
                   <Button variant="secondary" className="min-h-11">Open Trip</Button>
                 </Link>
               </Card>
@@ -300,7 +300,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
             {bookError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{bookError}</p>}
           </div>
         ) : (
-          <Link href="/trip">
+          <Link href={`/trip?tripId=${trip._id}`}>
             <Button className="w-full">Open my trip</Button>
           </Link>
         )}

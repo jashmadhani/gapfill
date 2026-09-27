@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { BellRing, Check, CalendarRange, Clock, IndianRupee, MessageCircle, Phone, Ticket } from "lucide-react";
 import { api, fmtDate, inr } from "@/lib/api-client";
 import { PageBody, PageHero } from "@/components/page";
@@ -13,11 +14,19 @@ import PendingChanges, { type PendingChange } from "@/components/plan/pending-ch
 import type { TripStage } from "@/lib/trip-helpers";
 import type { PlanDocument, Trip } from "@/types";
 
+interface OtherTrip {
+  id: string;
+  title: string;
+  status: string;
+  startDate: string;
+}
+
 interface TripResponse {
   trip: Trip | null;
   plan: PlanDocument | null;
   stage: TripStage | null;
   role: "admin" | "member" | null;
+  others: OtherTrip[];
 }
 
 function dayIndexFor(trip: Trip) {
@@ -175,7 +184,9 @@ function ReportChange({ trip, day, onReported, onBudgetDone, isAdmin }: { trip: 
   );
 }
 
-export default function TripPage() {
+function TripPageInner() {
+  const router = useRouter();
+  const tripId = useSearchParams().get("tripId");
   const [data, setData] = useState<TripResponse | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -184,7 +195,7 @@ export default function TripPage() {
   const [changes, setChanges] = useState<PendingChange[]>([]);
 
   const load = () => {
-    api.get<TripResponse>("/api/trip").then((d) => {
+    api.get<TripResponse>(tripId ? `/api/trip?tripId=${tripId}` : "/api/trip").then((d) => {
       setData(d);
       if (d.trip) {
         api.get<PaymentsData>(`/api/payments?tripId=${d.trip._id}`).then(setPayments).catch(() => {});
@@ -199,7 +210,8 @@ export default function TripPage() {
       if (document.visibilityState === "visible") load();
     }, 15000);
     return () => clearInterval(t);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
 
   const onSeed = async () => {
     setBusy(true);
@@ -241,6 +253,15 @@ export default function TripPage() {
   if (!trip) {
     return (
       <div className="px-5 pt-8">
+        {data.others.length > 0 && (
+          <div className="no-scrollbar -mb-2 mb-6 flex gap-2 overflow-x-auto">
+            {data.others.map((t) => (
+              <button key={t.id} type="button" onClick={() => router.push(`/trip?tripId=${t.id}`)} className="shrink-0 rounded-full bg-white px-4 py-2 text-sm font-semibold text-stone-700 ring-1 ring-stone-200">
+                {t.title}
+              </button>
+            ))}
+          </div>
+        )}
         <Empty
           title="No trip yet"
           action={
@@ -263,6 +284,20 @@ export default function TripPage() {
     <div>
       <PageHero size="md" img={trip.coverImageUrl} eyebrow={fmtDate(new Date().toISOString(), { weekday: "short", day: "numeric", month: "short" })} title={title} subtitle={trip.title} />
       <PageBody>
+        {data.others.length > 1 && (
+          <div className="no-scrollbar -mx-5 mb-5 flex gap-2 overflow-x-auto px-5">
+            {data.others.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => router.push(`/trip?tripId=${t.id}`)}
+                className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-semibold", t.id === trip._id ? "bg-ink text-white" : "bg-white text-stone-700 ring-1 ring-stone-200")}
+              >
+                {t.title}
+              </button>
+            ))}
+          </div>
+        )}
         {note && (
           <div className="mb-4 rounded-2xl bg-rani-50 px-4 py-3 text-sm font-semibold text-rani-700">{note}</div>
         )}
@@ -381,5 +416,13 @@ export default function TripPage() {
         </section>
       </PageBody>
     </div>
+  );
+}
+
+export default function TripPage() {
+  return (
+    <Suspense fallback={<PageBody><Spinner /></PageBody>}>
+      <TripPageInner />
+    </Suspense>
   );
 }

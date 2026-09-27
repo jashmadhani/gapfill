@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Send, Sparkles, X } from "lucide-react";
+import { Mic, Plus, Send, Sparkles, X } from "lucide-react";
 import { api, fmtDate } from "@/lib/api-client";
 import { PageBody, SectionHead } from "@/components/page";
 import { Button, Card, INTEREST, Segmented, Spinner, TOP_INTERESTS, cx } from "@/components/ui";
@@ -163,7 +163,7 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
               <label htmlFor="dest" className="mb-1.5 block text-sm font-semibold text-stone-700">Destination</label>
               <input id="dest" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Where to?" className={inputClass} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
               <div>
                 <label htmlFor="start" className="mb-1.5 block text-sm font-semibold text-stone-700">From</label>
                 <input id="start" type="date" min={today()} value={startDate} onChange={(e) => { setStartDate(e.target.value); if (endDate && endDate < e.target.value) setEndDate(e.target.value); }} className={inputClass} />
@@ -250,9 +250,15 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
           >
             <Sparkles size={18} className="shrink-0 text-violet-500" aria-hidden />
             <input value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="plan with AI" aria-label="Plan with AI" className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-stone-500 focus:outline-none" />
-            <button type="submit" disabled={aiBusy || !aiText.trim()} aria-label="Send" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rani-600 text-white disabled:opacity-50">
-              <Send size={16} />
-            </button>
+            {aiText.trim() ? (
+              <button type="submit" disabled={aiBusy} aria-label="Send" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rani-600 text-white disabled:opacity-50">
+                <Send size={16} />
+              </button>
+            ) : (
+              <button type="button" aria-label="Voice input (coming soon)" title="Voice input - coming soon" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rani-600 text-white">
+                <Mic size={16} />
+              </button>
+            )}
           </form>
         </div>
       </div>
