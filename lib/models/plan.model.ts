@@ -1,5 +1,5 @@
 import mongoose, { Schema, type HydratedDocument, type Model } from "mongoose";
-import type { EventCard, PlanConflict, PlanStatus } from "@/types";
+import type { EventCard, PlanConflict, PlanHotel, PlanStatus } from "@/types";
 
 export interface PlanDoc {
   planId: string;
@@ -11,6 +11,7 @@ export interface PlanDoc {
   status: PlanStatus;
 
   days: EventCard[][];
+  hotel?: PlanHotel;
 
   totalCost: number;
   narrative: string;
@@ -36,6 +37,7 @@ const PlanSchema = new Schema<Record<string, unknown>>(
     status: { type: String, default: "active", index: true },
 
     days: { type: [[Schema.Types.Mixed]], default: [] },
+    hotel: { type: Schema.Types.Mixed },
 
     totalCost: { type: Number, default: 0 },
     narrative: { type: String, default: "" },

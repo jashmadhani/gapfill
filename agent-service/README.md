@@ -47,6 +47,14 @@ Each tool is small and independently selectable by the model - see
 `app/tools/`: `get_my_profile`, `list_my_trips`, `get_trip_details`,
 `summarize_past_trips`, `search_experiences`, `navigate_app`, `remember_fact`.
 
+## Trip planning
+
+`POST /plan/generate` (structured params) and `POST /plan/intake` (chat) both
+run the pipeline in `app/planning/` (geocode -> nearby places -> score ->
+cluster into days -> sequence -> pick hotel) and persist through Next.js's
+`/api/agent/plan/create`. Ported from `trip-planner/backend`; see
+`../docs/plan-browse-tabs-progress.md` for what was and wasn't ported.
+
 ## Tests
 
 ```bash

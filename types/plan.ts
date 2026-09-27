@@ -52,6 +52,19 @@ export interface PlanConflict {
   text: string;
 }
 
+/** A suggested place to stay, anchored near the weighted centroid of the
+ * plan's top-scored POIs (trip-planner's select_hotel step) - not a real
+ * booking, just where the generated itinerary assumes the traveler sleeps. */
+export interface PlanHotel {
+  name: string;
+  location: GeoPoint;
+  address?: string;
+  rating?: number;
+  priceLevel?: number;
+  photoUrl?: string;
+  source: "geoapify" | "seed" | "manual";
+}
+
 export type PlanStatus = "active" | "superseded" | "discarded";
 
 /**
@@ -76,6 +89,7 @@ export interface PlanDocument {
   status: PlanStatus;
 
   days: EventCard[][]; // days[dayIndex] = that day's ordered cards
+  hotel?: PlanHotel;
 
   totalCost: number;
   narrative: string; // human-readable "what changed and why" for this version

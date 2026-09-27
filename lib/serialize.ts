@@ -106,6 +106,7 @@ export function toSafePlan(doc: PlanHydratedDocument): PlanDocument {
     parentPlanId: obj.parentPlanId,
     status: obj.status,
     days: obj.days ?? [],
+    hotel: obj.hotel,
     totalCost: obj.totalCost,
     narrative: obj.narrative,
     changeReason: obj.changeReason,

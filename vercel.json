@@ -16,7 +16,7 @@
         { "type": "service", "service": "web", "format": "url", "env": "NEXT_INTERNAL_BASE_URL" }
       ],
       "functions": {
-        "app/main.py": { "maxDuration": 60 }
+        "app/main.py": { "maxDuration": 120 }
       }
     }
   },

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Menu, MessageSquarePlus, Plus, Send, Sparkles, Trash2, X } from "lucide-react";
+import { Lock, Menu, MessageSquarePlus, Plus, Send, Sparkles, Trash2, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Button, Spinner, cx } from "@/components/ui";
 import type { ChatMessage, NavigateTarget } from "@/types";
@@ -17,6 +17,8 @@ const SUGGEST = [
 interface SessionSummary {
   id: string;
   title: string;
+  tag: "normal" | "plan";
+  readOnly: boolean;
   updatedAt: string;
   lastMessage: string;
 }
@@ -24,6 +26,7 @@ interface SessionSummary {
 interface SessionDetail {
   id: string;
   title: string;
+  readOnly?: boolean;
   messages: ChatMessage[];
 }
 
@@ -76,7 +79,11 @@ function HistoryDrawer({
               className={cx("group flex items-center gap-1 rounded-2xl px-1", s.id === activeId ? "bg-rani-50" : "hover:bg-stone-50")}
             >
               <button type="button" onClick={() => onSelect(s.id)} className="min-w-0 flex-1 px-3 py-3 text-left">
-                <span className={cx("block truncate text-sm font-semibold", s.id === activeId ? "text-rani-700" : "text-ink")}>{s.title}</span>
+                <span className={cx("flex items-center gap-1.5 truncate text-sm font-semibold", s.id === activeId ? "text-rani-700" : "text-ink")}>
+                  {s.tag === "plan" && <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-violet-700">Plan</span>}
+                  <span className="truncate">{s.title}</span>
+                  {s.readOnly && <Lock size={12} className="shrink-0 text-stone-400" aria-label="Read-only" />}
+                </span>
                 <span className="block truncate text-xs text-stone-500">{s.lastMessage || "No messages yet"}</span>
               </button>
               <button
@@ -134,7 +141,8 @@ export default function AskPage() {
   useEffect(() => {
     (async () => {
       const list = await loadSessions();
-      if (list.length) await openSession(list[0].id);
+      const firstNormal = list.find((x) => x.tag === "normal");
+      if (firstNormal) await openSession(firstNormal.id);
       else await newSession();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -146,7 +154,7 @@ export default function AskPage() {
 
   const send = async (q?: string) => {
     const t = (q ?? text).trim();
-    if (!t || busy || !active) return;
+    if (!t || busy || !active || active.readOnly) return;
     setText("");
     setActive((a) => (a ? { ...a, messages: [...a.messages, { role: "user", content: t, createdAt: new Date().toISOString() }] } : a));
     setBusy(true);
@@ -248,11 +256,12 @@ export default function AskPage() {
           </button>
           <input
             value={text}
+            disabled={active.readOnly}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Got questions…"
+            placeholder={active.readOnly ? "This plan chat is read-only" : "Got questions…"}
             className="min-h-11 min-w-0 flex-1 bg-transparent text-[16px] text-ink placeholder:text-stone-500 focus:outline-none"
           />
-          <Button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="!min-h-11 !w-11 !p-0">
+          <Button type="submit" disabled={busy || !text.trim() || active.readOnly} aria-label="Send" className="!min-h-11 !w-11 !p-0">
             <Send size={16} />
           </Button>
         </form>

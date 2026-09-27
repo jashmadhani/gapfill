@@ -28,6 +28,13 @@ export interface ChatMessage {
   createdAt: ISODateTime;
 }
 
+/** "normal" = the Ask tab's general assistant. "plan" = the AI-intake
+ * conversation on the Plan tab that produces a trip (see PlanDocument) - it
+ * shows up in the same chat-history menu, but the UI marks it read-only once
+ * `planTripId` is set, since the conversation's job (producing that plan) is
+ * finished at that point. */
+export type ChatSessionTag = "normal" | "plan";
+
 /** One conversation thread, listed in the Ask tab's chat-history menu. A
  * user can hold many; each is a fully independent context window sent to
  * the agent (see lib/schemas/chat.ts for the wire contract with the Python
@@ -37,6 +44,11 @@ export interface ChatSession {
   sessionId: string;
   userId: Id;
   title: string;
+  tag: ChatSessionTag;
+  /** Set once a "plan"-tagged session successfully produces a trip - the
+   * conversation becomes read-only from that point on. Absent for "normal"
+   * sessions and for "plan" sessions still mid-intake. */
+  planTripId?: Id;
   messages: ChatMessage[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;

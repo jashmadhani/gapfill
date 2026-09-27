@@ -12,7 +12,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const session = await ChatSessionModel.findOne({ sessionId: id, userId: user._id }).lean();
   if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
-  return NextResponse.json({ id: session.sessionId, title: session.title, messages: session.messages });
+  return NextResponse.json({
+    id: session.sessionId,
+    title: session.title,
+    tag: session.tag ?? "normal",
+    readOnly: session.tag === "plan" && !!session.planTripId,
+    planTripId: session.planTripId ? String(session.planTripId) : undefined,
+    messages: session.messages,
+  });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

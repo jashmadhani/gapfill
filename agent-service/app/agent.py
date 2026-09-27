@@ -6,7 +6,7 @@ from langgraph.prebuilt import create_react_agent
 
 from .config import settings
 from .next_client import NextClient
-from .tools import discover_tools, history_tools, memory_tools, navigation_tools, profile_tools, trip_tools
+from .tools import discover_tools, history_tools, intake_tools, memory_tools, navigation_tools, profile_tools, trip_tools
 
 SYSTEM_PROMPT = """You are Toure's in-app trip assistant. You can see the user's own \
 trips, preferences, and travel history through tools - always call a tool to fetch \
@@ -42,20 +42,52 @@ def build_agent(token: str):
     return create_react_agent(model, tools, prompt=SYSTEM_PROMPT)
 
 
-def extract_navigate(messages: list) -> dict | None:
-    """Scans the run's tool messages for the last navigate_app call and
-    returns its structured result, or None if the agent didn't navigate."""
+INTAKE_SYSTEM_PROMPT = """You are Toure's trip-planning intake assistant. Your only job is to \
+gather enough detail to generate a trip: destination and travel dates are required; budget, \
+group type (solo/couple/family/large_group), and up to a few interest themes (heritage, \
+culture, food, adventure, nature, relaxation, nightlife, shopping) are nice to have. Ask short, \
+specific follow-up questions one or two at a time - don't interrogate. As soon as you have a \
+destination and both dates, call finalize_trip_intake even if some optional fields are still \
+missing (use sensible defaults: budget 0 means unspecified, group_type "solo").
+
+Keep replies short and warm. Write in plain ASCII only: a hyphen "-" instead of an en/em dash, \
+straight quotes, a regular space instead of a non-breaking space, and "Rs." instead of the \
+rupee sign (this model garbles those specific characters when it generates them directly)."""
+
+
+def build_intake_agent():
+    """Separate from build_agent()'s general assistant - this one has a
+    single tool and a narrow job (see INTAKE_SYSTEM_PROMPT), matching
+    trip-planner's dedicated intake-stage agent rather than overloading the
+    general assistant's tool list with planning concerns."""
+    model = ChatGroq(model=settings.groq_model, api_key=settings.groq_api_key, temperature=0.3)
+    return create_react_agent(model, intake_tools.make_tools(), prompt=INTAKE_SYSTEM_PROMPT)
+
+
+def extract_tool_result(messages: list, tool_name: str) -> dict | None:
+    """Scans the run's tool messages for the last call to `tool_name` and
+    returns its structured result, or None if it wasn't called."""
     for message in reversed(messages):
-        if getattr(message, "name", None) != "navigate_app":
+        if getattr(message, "name", None) != tool_name:
             continue
         content = message.content
         try:
             data = json.loads(content) if isinstance(content, str) else content
         except (TypeError, ValueError):
             continue
-        if isinstance(data, dict) and data.get("target"):
+        if isinstance(data, dict):
             return data
     return None
+
+
+def extract_navigate(messages: list) -> dict | None:
+    data = extract_tool_result(messages, "navigate_app")
+    return data if data and data.get("target") else None
+
+
+def extract_finalize_intake(messages: list) -> dict | None:
+    data = extract_tool_result(messages, "finalize_trip_intake")
+    return data if data and data.get("destination") and data.get("start_date") and data.get("end_date") else None
 
 
 _UNICODE_REPLACEMENTS = {
