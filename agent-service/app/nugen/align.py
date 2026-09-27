@@ -67,8 +67,12 @@ def main() -> None:
         wait(c, f"/api/v3/alignment-projects/{align_id}/status", ("READY",))
         models = c.get("/api/v3/models/aligned").json()["domain_aligned_models"]
         mid = next((m["model_id"] for m in models if align_id in m["model_id"]), models[0]["model_id"])
-        c.post(f"/api/v3/models/{mid}/deployment").raise_for_status()
-        wait(c, f"/api/v3/models/{mid}/deployment/status", ("READY", "DEPLOYED", "ACTIVE"))
+        existing = {m["model_id"]: m.get("deployment_status") for m in c.get("/api/v3/models/aligned").json()["domain_aligned_models"]}
+        if existing.get(mid) not in ("DEPLOYED", "READY", "ACTIVE"):
+            c.post(f"/api/v3/models/{mid}/deployment").raise_for_status()
+            wait(c, f"/api/v3/models/{mid}/deployment/status", ("READY", "DEPLOYED", "ACTIVE"))
+        else:
+            print(f"  already {existing[mid]}, skipping deploy call")
         json.dump({"model_id": mid, "alignment_id": align_id, "base_model_id": a.base, "benchmark_id": bench_id,
                    "document_id": doc_id}, open(client.MODEL_FILE, "w"), indent=2)
         print("saved", client.MODEL_FILE, "->", mid)

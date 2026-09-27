@@ -15,14 +15,41 @@ SYSTEM = ("You read a traveler's message during a trip and reply with JSON only:
 
 
 def parse_reply(text: str) -> list | None:
-    m = re.search(r"\{.*\}", text or "", re.S)
-    if not m:
+    """This small aligned model answers the same question in several different (but each individually valid) shapes:
+    {"moods": [...]} as trained, a per-label {"tired": false, "hot": true, ...} dict, a bare JSON array
+    ["hot", "foodie"], or plain comma/space-separated label words with no JSON at all. All are accepted; anything
+    that yields zero known labels falls through to the next shape rather than being treated as "no mood"."""
+    text = (text or "").strip()
+    if not text:
         return None
-    try:
-        moods = json.loads(m.group(0)).get("moods")
-    except ValueError:
-        return None
-    return [x for x in moods if x in MOODS] if isinstance(moods, list) else None
+    obj = re.search(r"\{.*\}", text, re.S)
+    if obj:
+        try:
+            data = json.loads(obj.group(0))
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            if isinstance(data.get("moods"), list):
+                found = [x for x in data["moods"] if x in MOODS]
+                if found:
+                    return found
+            if data and all(isinstance(v, bool) for v in data.values()):
+                found = [k for k, v in data.items() if v and k in MOODS]
+                if found:
+                    return found
+    arr = re.search(r"\[.*\]", text, re.S)
+    if arr:
+        try:
+            data = json.loads(arr.group(0))
+        except ValueError:
+            data = None
+        if isinstance(data, list):
+            found = [x for x in data if x in MOODS]
+            if found:
+                return found
+    # Plain text: whichever known labels appear as whole words, in order of appearance.
+    found = [m for m in MOODS if re.search(r"\b" + re.escape(m) + r"\b", text)]
+    return found or None
 
 
 async def parse_mood(text: str) -> list | None:

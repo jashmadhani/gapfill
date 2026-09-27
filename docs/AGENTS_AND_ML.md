@@ -28,7 +28,7 @@ the model sees them. Payments run in sandbox mode: no real money moves.
 | Satisfaction (per person, per place) | HistGradientBoosting regressor | test MAE 0.32 on a 1 to 5 scale, R² 0.78, on 95 held-out places (rating alone: MAE 0.63) |
 | Crowd (busyness by hour) | gradient boosting | MAE 5 points, R² 0.88 |
 | Mood (free text to labels) | TF-IDF + one-vs-rest logistic regression | F1 0.889 on 16 hand-written sentences |
-| Mood, aligned LLM (optional) | NuGen alignment of a base model (llama-v3p2-3b-reasoning) | first alignment run FAILED on NuGen's side after ~90 min (no error detail given); a retry is running. Falls back to the local model above until one deploys. |
+| Mood, aligned LLM | NuGen alignment of llama-v3p2-3b-reasoning, deployed | **F1 0.706** on the same 16-sentence benchmark, worse than the local model's 0.889 |
 | Gemini `gemini-flash-latest` | The booking agent, when `GEMINI_API_KEY` is set | Not configured in this environment yet; `app/intent.py`'s rules-based parser drives the same tools meanwhile, through the same gateway |
 
 ### Known weaknesses (say these before someone else does)
@@ -38,6 +38,12 @@ the model sees them. Payments run in sandbox mode: no real money moves.
 - The mood model's F1 of 1.0 on its own held-out split is not meaningful: the split comes from the same generator.
   The honest figure is the 16-sentence natural test (0.889). It over-predicts "energetic", has no negation handling
   ("slept well" reads as tired), is English only, and has no context.
+- **The NuGen-aligned model scores lower (0.706), not higher**, on the same 16 sentences. It missed "I'd love to
+  understand the history of this place" entirely, and invented moods for "what time does the safari start?" (no mood
+  expressed at all). It also answers the same question in at least four different JSON/text shapes across calls even
+  at temperature 0 (`{"moods": [...]}`, a per-label `{"tired": false, ...}` dict, a bare `[...]` array, or plain
+  comma-separated words) - `app/nugen/mood.py`'s parser now accepts all four, but that inconsistency itself is a
+  reliability problem a 3B-parameter aligned model has that the dedicated scikit-learn classifier does not.
 
 ## Datasets
 - **Kaggle, Top Indian Places to Visit** (325 attractions: ratings, review counts, fees, durations, best time, weekly
