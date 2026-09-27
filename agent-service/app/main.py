@@ -5,6 +5,7 @@ from .agent import build_agent, build_intake_agent, extract_finalize_intake, ext
 from .config import settings
 from .next_client import NextClient
 from .planning.generator import PlanGenerationError, generate_plan
+from .safety import redact
 from .schemas import AgentChatRequest, AgentChatResponse, ChatTurn
 from .security import verify_token
 
@@ -32,7 +33,7 @@ async def chat(body: AgentChatRequest, authorization: str | None = Header(defaul
 
     agent = build_agent(token=token)
     messages = [{"role": turn.role, "content": turn.content} for turn in body.history]
-    messages.append({"role": "user", "content": body.message})
+    messages.append({"role": "user", "content": redact(body.message)[0]})
 
     result = await agent.ainvoke({"messages": messages})
     reply = sanitize_reply(result["messages"][-1].content)
@@ -114,7 +115,7 @@ async def plan_intake(body: PlanIntakeRequest, authorization: str | None = Heade
 
     agent = build_intake_agent()
     messages = [{"role": turn.role, "content": turn.content} for turn in body.history]
-    messages.append({"role": "user", "content": body.message})
+    messages.append({"role": "user", "content": redact(body.message)[0]})
     result = await agent.ainvoke({"messages": messages})
 
     finalize = extract_finalize_intake(result["messages"])

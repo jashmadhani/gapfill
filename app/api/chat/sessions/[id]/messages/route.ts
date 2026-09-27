@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { mintAgentServiceToken } from "@/lib/auth/agent-jwt";
+import { SECRET_WARNING, redact } from "@/lib/safety";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { ChatSessionModel } from "@/lib/models/chat-session.model";
 import { agentChatRequestSchema, agentChatResponseSchema } from "@/lib/schemas/chat";
@@ -19,8 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const { id } = await params;
-  const { text, context } = (await req.json()) as { text?: string; context?: string };
-  if (!text?.trim()) return NextResponse.json({ error: "text is required" }, { status: 400 });
+  const { text: rawText, context } = (await req.json()) as { text?: string; context?: string };
+  if (!rawText?.trim()) return NextResponse.json({ error: "text is required" }, { status: 400 });
+  // Secrets are removed before the message is stored or the assistant sees it.
+  const { text, found: secretsFound } = redact(rawText);
 
   await connectToDatabase();
   const session = await ChatSessionModel.findOne({ sessionId: id, userId: user._id });
@@ -94,7 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   session.messages.push({
     role: "assistant",
-    content: agentReply.reply,
+    content: secretsFound.length ? `${SECRET_WARNING}\n\n${agentReply.reply}` : agentReply.reply,
     toolCalls: agentReply.toolCalls,
     navigate: agentReply.navigate ?? undefined,
     createdAt: new Date().toISOString(),

@@ -13,6 +13,7 @@ import RouteMap from "@/components/route-map";
 import LeftOut from "@/components/plan/left-out";
 import { GroupFairness } from "@/components/group";
 import GroupPanel, { type GroupData } from "@/components/group/group-panel";
+import ApprovalCard, { type PaymentsData } from "@/components/plan/approval-card";
 import type { PlanDocument, Trip } from "@/types";
 
 interface PlanResponse {
@@ -27,6 +28,8 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
   const [data, setData] = useState<PlanResponse | null>(null);
 
   const [group, setGroup] = useState<GroupData | null>(null);
+  const [payments, setPayments] = useState<PaymentsData | null>(null);
+  const [bookError, setBookError] = useState<string | null>(null);
   const [updated, setUpdated] = useState(false);
 
   const load = () => {
@@ -38,6 +41,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
       });
     });
     api.get<GroupData>(`/api/groups/${tripId}`).then(setGroup).catch(() => {});
+    api.get<PaymentsData>(`/api/payments?tripId=${tripId}`).then(setPayments).catch(() => {});
   };
   useEffect(() => {
     load(); // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,6 +130,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                 dayLabels={plan.days.map((_, i) => fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric" }))}
               />
             )}
+            {payments && <ApprovalCard data={payments} onChanged={load} />}
             <GroupFairness summary={plan?.fitSummary} />
             {group && <GroupPanel tripId={trip._id} group={group} onChanged={load} />}
             {plan?.hotel && (
@@ -234,9 +239,25 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
 
       <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-5 pb-3 pt-4 lg:bottom-0 lg:mx-auto lg:max-w-md lg:bg-none">
         {!isAdmin ? null : draft ? (
-          <Button className="w-full" disabled={errors.length > 0}>
-            {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? "s" : ""} to book` : `Ready to book · ${inr(trip.totalBudget)}`}
-          </Button>
+          <div className="space-y-1.5">
+            <Button
+              className="w-full"
+              disabled={errors.length > 0}
+              onClick={async () => {
+                setBookError(null);
+                try {
+                  await api.post("/api/payments", { tripId: trip._id, kind: "booking", mode: "deposit" });
+                  load();
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                } catch (e) {
+                  setBookError(e instanceof Error ? e.message : "Couldn't prepare the booking");
+                }
+              }}
+            >
+              {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? "s" : ""} to book` : "Book this trip"}
+            </Button>
+            {bookError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{bookError}</p>}
+          </div>
         ) : (
           <Link href="/trip">
             <Button className="w-full">Open my trip</Button>
