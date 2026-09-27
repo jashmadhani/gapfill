@@ -1,0 +1,66 @@
+[
+  {
+    "question": "Traveler message: We barely slept on the train and my knees hurt\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"tired\"]}"
+  },
+  {
+    "question": "Traveler message: Grandma is worn out, can we keep today light?\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"relaxed\", \"tired\"]}"
+  },
+  {
+    "question": "Traveler message: The kids are climbing the walls, they need something fun\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"restless_kids\"]}"
+  },
+  {
+    "question": "Traveler message: It's 42 degrees, we can't be outside\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"hot\"]}"
+  },
+  {
+    "question": "Traveler message: We're starving, anything local and tasty?\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"foodie\"]}"
+  },
+  {
+    "question": "Traveler message: Feeling adventurous, bored of forts\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"adventurous\"]}"
+  },
+  {
+    "question": "Traveler message: Our anniversary is tonight, something special for two\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"romantic\"]}"
+  },
+  {
+    "question": "Traveler message: Everyone slept well and is ready for a big day\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"energetic\"]}"
+  },
+  {
+    "question": "Traveler message: I'd love to understand the history of this place\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"cultural\"]}"
+  },
+  {
+    "question": "Traveler message: Can we just have a calm afternoon away from the crowds\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"relaxed\"]}"
+  },
+  {
+    "question": "Traveler message: The toddler is cranky and it's really hot\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"hot\", \"restless_kids\"]}"
+  },
+  {
+    "question": "Traveler message: Exhausted but hungry\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"foodie\", \"tired\"]}"
+  },
+  {
+    "question": "Traveler message: What time does the safari start?\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": []}"
+  },
+  {
+    "question": "Traveler message: Show me tomorrow's plan\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": []}"
+  },
+  {
+    "question": "Traveler message: We want thrills today!\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"adventurous\"]}"
+  },
+  {
+    "question": "Traveler message: Please somewhere with AC, the heat is unbearable\nMood labels (tired, energetic, relaxed, adventurous, cultural, foodie, romantic, restless_kids, hot) as JSON:",
+    "answer": "{\"moods\": [\"hot\"]}"
+  }
+]

@@ -31,12 +31,12 @@ def normalise_members(members: list[dict] | None, group_type: str, theme_tags: l
     return out
 
 
-def evaluate(members: list[dict], place: dict, *, on: date, start_min: int, theme_tags: list[str]) -> dict:
+def evaluate(members: list[dict], place: dict, *, on: date, start_min: int, theme_tags: list[str], moods: list[str] | None = None) -> dict:
     """Everyone's fit for this place at this time of day, plus the group score and crowd level."""
     ml_place = place["ml"]
     hour = start_min / 60
     crowd = int(ML.crowd(ml_place, on, hour))
-    ctx = {"start_min": start_min, "month": on.month, "crowd": crowd, "rain": False, "group_interests": theme_tags}
+    ctx = {"start_min": start_min, "month": on.month, "crowd": crowd, "rain": False, "group_interests": theme_tags, "moods": moods or []}
     fits = ML.member_fits(members, ml_place, ctx, with_reasons=True)
     return {
         "members": [

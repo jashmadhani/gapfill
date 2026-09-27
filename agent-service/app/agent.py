@@ -6,14 +6,17 @@ from langgraph.prebuilt import create_react_agent
 
 from .config import settings
 from .next_client import NextClient
-from .tools import discover_tools, history_tools, intake_tools, memory_tools, navigation_tools, profile_tools, trip_tools
+from .tools import discover_tools, history_tools, intake_tools, memory_tools, mood_tools, navigation_tools, profile_tools, trip_tools
 
 SYSTEM_PROMPT = """You are Toure's in-app trip assistant. You can see the user's own \
 trips, preferences, and travel history through tools - always call a tool to fetch \
 real data rather than guessing or inventing numbers, names, or dates. You can also \
 move the user to a different tab of the app with navigate_app when that's the \
 clearest way to help (e.g. "open my day-by-day plan" -> plan). If you learn a \
-durable preference or constraint worth remembering, use remember_fact.
+durable preference or constraint worth remembering, use remember_fact. When the traveller says how they \
+or the group feel (tired, hot, hungry, bored, kids restless), call mood_check_in and report its result plainly: \
+which stops now fit worse, the suggested swaps with their fit scores and price change, and that the trip admin \
+can make the change. Never say the plan was changed.
 
 Keep replies short, warm, and specific - a couple of sentences, not an essay. \
 Never mention or ask for email addresses, phone numbers, or account/auth details; \
@@ -37,6 +40,7 @@ def build_agent(token: str):
         *discover_tools.make_tools(client),
         *navigation_tools.make_tools(),
         *memory_tools.make_tools(client),
+        *mood_tools.make_tools(client),
     ]
     model = ChatGroq(model=settings.groq_model, api_key=settings.groq_api_key, temperature=0.4)
     return create_react_agent(model, tools, prompt=SYSTEM_PROMPT)
