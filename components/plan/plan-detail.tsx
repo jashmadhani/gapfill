@@ -11,6 +11,7 @@ import FloatingChat from "@/components/plan/floating-chat";
 import DayTimeline from "@/components/day-timeline";
 import RouteMap from "@/components/route-map";
 import LeftOut from "@/components/plan/left-out";
+import { GroupFairness } from "@/components/group";
 import type { PlanDocument, Trip } from "@/types";
 
 interface PlanResponse {
@@ -94,6 +95,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                 dayLabels={plan.days.map((_, i) => fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric" }))}
               />
             )}
+            <GroupFairness summary={plan?.fitSummary} />
             {plan?.hotel && (
               <Card className="flex items-center gap-4 p-4">
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ink text-white">

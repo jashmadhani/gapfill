@@ -3,6 +3,7 @@
 import { BedDouble, Car, Coffee, Sparkles, Trash2, UtensilsCrossed } from "lucide-react";
 import { Chip, cx } from "@/components/ui";
 import type { EventCard, TripRisk } from "@/types";
+import { FitBadge, FitChips } from "@/components/group";
 
 const dead = (c: EventCard) => c.status === "dismissed" || c.status === "replaced";
 
@@ -108,6 +109,15 @@ export function ItemRow({ card, editable, onRemove, risk, now }: ItemRowProps) {
           </span>
         </span>
         {card.fitReason && !dead(card) && <p className="mt-2 text-sm text-stone-600">{card.fitReason}</p>}
+        {card.memberFits?.length && !dead(card) && card.type === "activity" ? (
+          <div className="mt-2.5 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {card.groupFit != null && <FitBadge fit={card.groupFit} />}
+              {card.crowd != null && <span className="text-sm text-stone-600">{card.crowd >= 68 ? "Busy then" : card.crowd >= 45 ? "Moderately busy" : "Quiet then"} · {card.crowd}%</span>}
+            </div>
+            <FitChips members={card.memberFits} />
+          </div>
+        ) : null}
         {risk && <p className="mt-2 text-sm font-medium text-orange-700">{risk.text}</p>}
       </div>
     </li>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, Clock, Plus, Star } from "lucide-react";
 import { api, inr } from "@/lib/api-client";
 import { Button, Card, Chip, Photo, cx } from "@/components/ui";
+import { FitBadge, FitChips } from "@/components/group";
 import type { ConsideredPlace } from "@/types";
 
 const hours = (m: number) => (m >= 60 ? `${Math.round(m / 6) / 10} h` : `${m} min`);
@@ -48,6 +49,12 @@ function Candidate({ place, days, editable, busy, onAdd }: { place: ConsideredPl
         </Chip>
         <span className="text-stone-700">{first}</span>
       </div>
+      {place.memberFits?.length ? (
+        <div className="mt-2.5 space-y-2">
+          {place.groupFit != null && !excluded && <FitBadge fit={place.groupFit} />}
+          <FitChips members={place.memberFits} />
+        </div>
+      ) : null}
       {more.length > 0 && (
         <ul className="mt-1.5 space-y-0.5 pl-1 text-sm text-stone-600">
           {more.map((r) => (
