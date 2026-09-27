@@ -49,6 +49,12 @@ export interface PoiDoc {
   trustMeta: Record<string, unknown>;
   computedQualityScore?: number;
 
+  /** Traveller-fit inputs kept from the curated catalog (intensity, stairs, walking km, seating,
+   * shade, minimum age, popularity, best time, closed weekdays, kid-friendly). Used to explain
+   * why a place suits or doesn't suit each person in a group. */
+  attrs?: Record<string, unknown>;
+  vendorName?: string;
+
   source: "vendor" | "google_places" | "wikimedia" | "seed" | "manual";
   createdAt: Date;
   updatedAt: Date;
@@ -105,6 +111,8 @@ const PoiSchema = new Schema<Record<string, unknown>>(
     trustScore: { type: Number, default: 0 },
     trustMeta: { type: Schema.Types.Mixed, default: {} },
     computedQualityScore: { type: Number },
+    attrs: { type: Schema.Types.Mixed, default: {} },
+    vendorName: { type: String },
 
     source: { type: String, default: "seed" },
   },
