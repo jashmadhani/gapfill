@@ -9,6 +9,7 @@ import { PageBody, SectionHead } from "@/components/page";
 import { Button, Card, INTEREST, Segmented, Spinner, TOP_INTERESTS, cx } from "@/components/ui";
 import type { ChatMessage, GroupType } from "@/types";
 
+const fieldClass = "min-h-12 rounded-2xl border border-stone-200 bg-white px-4 text-[16px] text-ink placeholder:text-stone-400 outline-none focus:border-rani-500 focus:ring-2 focus:ring-rani-100";
 const inputClass = "min-h-12 w-full rounded-2xl border border-stone-200 bg-white px-4 text-[16px] text-ink placeholder:text-stone-400 outline-none focus:border-rani-500 focus:ring-2 focus:ring-rani-100";
 
 const GROUPS: { value: GroupType; label: string }[] = [
@@ -166,12 +167,12 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
               <p className="mt-2 text-sm text-stone-600">Ages and step-free needs shape which places suit each person, so the plan works for everyone.</p>
               <ul className="mt-3 space-y-2">
                 {travellers.map((t, i) => (
-                  <li key={i} className="flex items-center gap-2">
+                  <li key={i} className="flex flex-wrap items-center gap-2 rounded-2xl bg-stone-50/70 p-2 sm:flex-nowrap sm:bg-transparent sm:p-0">
                     <label className="sr-only" htmlFor={`tn-${i}`}>Name of traveller {i + 1}</label>
-                    <input id={`tn-${i}`} value={t.name} onChange={(e) => setTraveller(i, { name: e.target.value })} placeholder="Name" maxLength={40} className={cx(inputClass, "min-w-0 flex-1")} />
+                    <input id={`tn-${i}`} value={t.name} onChange={(e) => setTraveller(i, { name: e.target.value })} placeholder="Name" maxLength={40} className={cx(fieldClass, "w-full min-w-0 sm:flex-1")} />
                     <label className="sr-only" htmlFor={`ta-${i}`}>Age of {t.name || `traveller ${i + 1}`}</label>
-                    <input id={`ta-${i}`} type="number" inputMode="numeric" min={0} max={110} value={Number.isFinite(t.age) ? t.age : ""} onChange={(e) => setTraveller(i, { age: Number(e.target.value) })} className={cx(inputClass, "w-20 shrink-0 text-center")} />
-                    <button type="button" aria-pressed={t.stepFree} onClick={() => setTraveller(i, { stepFree: !t.stepFree })} title="Needs step-free access" className={cx("min-h-12 shrink-0 rounded-2xl px-3 text-sm font-semibold ring-1 transition", t.stepFree ? "bg-rani-600 text-white ring-rani-600" : "bg-white text-stone-700 ring-stone-200")}>
+                    <input id={`ta-${i}`} type="number" inputMode="numeric" min={0} max={110} value={Number.isFinite(t.age) ? t.age : ""} onChange={(e) => setTraveller(i, { age: Number(e.target.value) })} className={cx(fieldClass, "w-20 shrink-0 text-center")} />
+                    <button type="button" aria-pressed={t.stepFree} onClick={() => setTraveller(i, { stepFree: !t.stepFree })} title="Needs step-free access" className={cx("min-h-12 flex-1 shrink-0 rounded-2xl px-3 text-sm font-semibold ring-1 transition sm:flex-none", t.stepFree ? "bg-rani-600 text-white ring-rani-600" : "bg-white text-stone-700 ring-stone-200")}>
                       Step-free
                     </button>
                     {travellers.length > 1 && (

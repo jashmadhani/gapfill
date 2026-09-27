@@ -30,6 +30,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover", // lets the hero run under the status bar; env(safe-area-inset-*) then keeps text clear of it
   themeColor: "#eaf0f7",
 };
 

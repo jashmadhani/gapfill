@@ -41,7 +41,7 @@ function Carousel({ title, items, onOpen }: { title: string; items: FeedItem[]; 
   return (
     <section aria-label={title}>
       <SectionHead title={title} />
-      <ul className="no-scrollbar -mx-5 flex snap-x snap-mandatory gap-3 overflow-x-auto px-5 pb-2 md:mx-0 md:px-0">
+      <ul className="no-scrollbar -mx-5 flex snap-x snap-mandatory scroll-px-5 gap-3 overflow-x-auto px-5 pb-2 md:mx-0 md:scroll-px-0 md:px-0">
         {items.map((it) => (
           <li key={it.key} className="w-[58vw] max-w-[15rem] shrink-0 snap-start">
             <button type="button" onClick={() => onOpen({ name: it.name, lat: it.lat, lng: it.lng, imageUrl: it.imageUrl })} className="block w-full text-left">
@@ -109,7 +109,7 @@ export default function Browse({ onOpen }: { onOpen: (p: PlaceRef) => void }) {
           {results.length === 0 ? (
             <p className="rounded-[1.6rem] bg-white p-6 text-center text-stone-600 shadow-soft">No places found. Try a city name.</p>
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2">
+            <ul className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
               {results.map((p) => (
                 <li key={p.id}>
                   <button type="button" onClick={() => onOpen(p)} className="flex w-full items-center gap-3.5 rounded-[1.4rem] bg-white p-2.5 pr-4 text-left shadow-soft">
