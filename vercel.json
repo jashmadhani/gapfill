@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": ".",
+      "framework": "nextjs",
+      "bindings": [
+        { "type": "service", "service": "agent", "format": "url", "env": "AGENT_SERVICE_URL" }
+      ]
+    },
+    "agent": {
+      "root": "agent-service",
+      "framework": "fastapi",
+      "entrypoint": "app.main:app",
+      "bindings": [
+        { "type": "service", "service": "web", "format": "url", "env": "NEXT_INTERNAL_BASE_URL" }
+      ],
+      "functions": {
+        "app/main.py": { "maxDuration": 60 }
+      }
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": { "service": "web" } }]
+}

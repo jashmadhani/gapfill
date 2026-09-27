@@ -29,6 +29,18 @@ that's already on 8000. Next.js reads the URL from `AGENT_SERVICE_URL` in
 `toure/.env.local` (set to `http://localhost:8010`), alongside the same
 `AGENT_SERVICE_SECRET`.
 
+## Deploying
+
+In production this runs as part of the *same* Vercel project as the Next.js
+app, via the `services` block in `../vercel.json` (a [Vercel
+Service](https://vercel.com/docs/services), FastAPI framework - no code
+changes needed for that). It has no public rewrite of its own there, so it's
+reachable only from `web` (the Next.js service) through a [service
+binding](https://vercel.com/docs/services/bindings), never directly from the
+internet - `AGENT_SERVICE_URL`/`NEXT_INTERNAL_BASE_URL` are auto-injected by
+that binding in production and only need manual values (as above) for local
+dev. See `../README.md`'s "Deploy on Vercel" section for the env vars to set.
+
 ## Tools
 
 Each tool is small and independently selectable by the model - see
@@ -41,6 +53,9 @@ Each tool is small and independently selectable by the model - see
 pytest
 ```
 
-Currently just the schema-contract check (`tests/test_schema_contract.py`)
-against `schemas/*.json`, regenerated from the TS side with
-`npm run export-agent-schemas` (see `toure/lib/schemas/chat.ts`).
+Covers the schema-contract check (`tests/test_schema_contract.py`) against
+`schemas/*.json`, regenerated from the TS side with `npm run
+export-agent-schemas` (see `toure/lib/schemas/chat.ts`), and the reply
+sanitizer (`tests/test_sanitize_reply.py`) that guarantees clean ASCII output
+regardless of the model's occasional Unicode mis-tokenization (see
+`app/agent.py`'s `sanitize_reply`).

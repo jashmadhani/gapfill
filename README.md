@@ -31,6 +31,13 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+This repo deploys as **one Vercel project** containing two [Vercel Services](https://vercel.com/docs/services) - the Next.js app (`web`) and the Ask tab's Python assistant (`agent`, from `agent-service/`) - wired together in `vercel.json`. See `agent-service/README.md` for how that service works.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Import this repo in Vercel as usual (`vercel.json`'s `services` block is picked up automatically - no separate project needed for `agent-service/`).
+2. Set these environment variables on the project:
+   - `MONGODB_URI`, `AUTH_SECRET`, `IMAGEKIT_PUBLIC`, `IMAGEKIT_PRIVATE`, `IMAGEKIT_ENDPOINT`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - used by `web` (the Next.js app), same as local dev.
+   - `AGENT_SERVICE_SECRET` - the shared JWT-signing secret between `web` and `agent`. Set it once; both services read the same project-level value.
+   - `GROQ_API_KEY`, `GROQ_MODEL` - used by `agent` only.
+3. Do **not** set `AGENT_SERVICE_URL` or `NEXT_INTERNAL_BASE_URL` in Vercel - those are auto-injected per deployment by the `bindings` in `vercel.json`. They're only set manually in `.env.local` / `agent-service/.env` for local dev, where the two run as separate processes you start by hand (see `agent-service/README.md`).
+
+The `agent` service has no public rewrite of its own, so it's unreachable from outside - `web` is the only public entry point, and reaches `agent` only through the binding.
