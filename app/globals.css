@@ -167,3 +167,14 @@ body {
     transition-duration: 1ms !important;
   }
 }
+
+/* ---- Trip map pins (MapLibre markers) ---- */
+.tc-pin { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; padding: 6px; min-width: 44px; min-height: 44px; justify-content: center; cursor: pointer; }
+.tc-dot { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; font: 800 14px/1 var(--font-display, inherit); color: #fff; background: #3a6db4; box-shadow: 0 0 0 3px #fff, 0 4px 12px rgb(14 37 71 / .3); transition: transform .15s; }
+.tc-pin[data-kind="hotel"] .tc-dot { background: #0c1626; }
+.tc-pin[data-kind="meal"] .tc-dot { background: #b45309; }
+.tc-pin[data-kind="ghost"] .tc-dot { width: 22px; height: 22px; background: #fff; color: #6b7a8d; border: 2px dashed #6b7a8d; box-shadow: 0 2px 8px rgb(14 37 71 / .2); font-size: 12px; }
+.tc-label { font: 700 13px/1 var(--font-sans, inherit); color: #0e1522; background: rgb(255 255 255 / .95); padding: 4px 8px; border-radius: 999px; box-shadow: 0 2px 6px rgb(14 37 71 / .15); white-space: nowrap; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+.tc-pin[data-selected="true"] .tc-dot { transform: scale(1.25); box-shadow: 0 0 0 3px #fff, 0 0 0 6px #1f4f8f, 0 4px 12px rgb(14 37 71 / .3); }
+.maplibregl-ctrl-group { border-radius: 14px !important; overflow: hidden; box-shadow: 0 4px 14px rgb(14 37 71 / .15) !important; }
+.maplibregl-ctrl-group button { width: 40px !important; height: 40px !important; }

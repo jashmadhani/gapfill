@@ -7,7 +7,9 @@ import type { EventCard, TripRisk } from "@/types";
 const dead = (c: EventCard) => c.status === "dismissed" || c.status === "replaced";
 
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+  // Card times are stored as the wall-clock time at the destination, written with a "Z" suffix.
+  // Read them back in UTC so 09:00 shows as 9:00 am whatever timezone the viewer is in.
+  return new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" });
 }
 
 function fmtMoney(n: number) {

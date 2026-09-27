@@ -95,9 +95,14 @@ export async function POST(req: NextRequest) {
 
 interface PatchBody {
   tripId: string;
-  itemId: string;
-  action: "remove" | "toggle_lock";
+  itemId?: string;
+  action: "remove" | "toggle_lock" | "add_considered";
+  /** add_considered: which left-out place to bring into the plan, and on which day (1-based). */
+  key?: string;
+  day?: number;
 }
+
+const iso = (d: Date) => d.toISOString();
 
 export async function PATCH(req: NextRequest) {
   const user = await requireUser();
@@ -110,10 +115,67 @@ export async function PATCH(req: NextRequest) {
   const plan = await getActivePlanForTrip(trip._id.toString());
   if (!plan) return NextResponse.json({ error: "No active plan" }, { status: 404 });
 
+  if (body.action === "add_considered") {
+    // Bring a place the planner left out into the plan: append after the day's last stop.
+    const entry = (plan.considered ?? []).find((c) => c.key === body.key);
+    if (!entry) return NextResponse.json({ error: "That place is no longer in the left-out list" }, { status: 404 });
+    const dayIdx = Math.min(Math.max((body.day ?? 1) - 1, 0), plan.days.length - 1);
+    if (dayIdx < 0) return NextResponse.json({ error: "This plan has no days yet" }, { status: 400 });
+    const live = plan.days[dayIdx].filter((c) => c.status !== "dismissed").sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const dayStart = new Date(`${trip.startDate}T09:00:00.000Z`);
+    dayStart.setUTCDate(dayStart.getUTCDate() + dayIdx);
+    const dayEnd = new Date(dayStart.getTime() + 12.5 * 3600000); // 21:30
+    const duration = entry.durationMin ?? 60;
+    // First gap in the day that fits it (between 09:00 and 21:30); otherwise after the last stop.
+    const candidates = [dayStart, ...live.map((c) => new Date(new Date(c.endTime).getTime() + 15 * 60000))];
+    const fits = (t: Date) => {
+      const end = t.getTime() + duration * 60000;
+      return end <= dayEnd.getTime() && live.every((c) => end <= new Date(c.startTime).getTime() || t.getTime() >= new Date(c.endTime).getTime());
+    };
+    const last = live[live.length - 1];
+    const start = candidates.find(fits) ?? (last ? new Date(new Date(last.endTime).getTime() + 15 * 60000) : dayStart);
+    plan.days[dayIdx].push({
+      itemId: `d${dayIdx}_${entry.key}_${Date.now()}`,
+      type: "activity",
+      startTime: iso(start),
+      endTime: iso(new Date(start.getTime() + duration * 60000)),
+      durationMin: duration,
+      poiId: entry.poiId ?? undefined,
+      title: entry.name,
+      activityType: "activity",
+      location: entry.location,
+      minExpectedSpend: Math.round(entry.price * 0.7),
+      typicalSpend: entry.price,
+      fitReason: "Added from the left-out list",
+      accessibilityIcons: [],
+      photoRef: entry.imageUrl ?? undefined,
+      locked: false,
+      status: "suggested",
+    });
+    plan.considered = plan.considered.filter((c) => c.key !== body.key);
+    plan.totalCost = (plan.totalCost ?? 0) + entry.price;
+    plan.markModified("days");
+    plan.markModified("considered");
+    plan.modifiedAt = new Date();
+    await plan.save();
+    return NextResponse.json({ plan: toSafePlan(plan) });
+  }
+
   for (const day of plan.days) {
     const item = day.find((i) => i.itemId === body.itemId);
     if (!item) continue;
-    if (body.action === "remove") item.status = "dismissed";
+    if (body.action === "remove") {
+      item.status = "dismissed";
+      // Keep what you removed visible, so it can be put back.
+      if (item.type === "activity" && item.location && !(plan.considered ?? []).some((c) => c.key === item.itemId)) {
+        plan.considered = [
+          { poiId: item.poiId ?? null, key: item.itemId, name: item.title, price: item.typicalSpend, priceSource: "catalog", durationMin: item.durationMin,
+            tags: [], imageUrl: item.photoRef ?? null, location: item.location, verdict: "left_out", reasons: ["You removed this from the plan"] },
+          ...(plan.considered ?? []),
+        ];
+        plan.markModified("considered");
+      }
+    }
     if (body.action === "toggle_lock") item.locked = !item.locked;
   }
   plan.markModified("days");

@@ -9,6 +9,8 @@ import { PageBody, PageHero } from "@/components/page";
 import { Bar, Button, Card, Empty, Photo, Spinner, cx } from "@/components/ui";
 import FloatingChat from "@/components/plan/floating-chat";
 import DayTimeline from "@/components/day-timeline";
+import RouteMap from "@/components/route-map";
+import LeftOut from "@/components/plan/left-out";
 import type { PlanDocument, Trip } from "@/types";
 
 interface PlanResponse {
@@ -84,6 +86,14 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
 
         <div className="lg:grid lg:grid-cols-[1fr_1.1fr] lg:items-start lg:gap-10 [&>*]:min-w-0">
           <section className="space-y-5 lg:sticky lg:top-24">
+            {plan && plan.days.length > 0 && (
+              <RouteMap
+                days={plan.days}
+                hotel={plan.hotel}
+                considered={plan.considered}
+                dayLabels={plan.days.map((_, i) => fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric" }))}
+              />
+            )}
             {plan?.hotel && (
               <Card className="flex items-center gap-4 p-4">
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ink text-white">
@@ -181,6 +191,9 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
               ))}
               {(!plan || plan.days.length === 0) && <Empty title="Nothing planned yet">Add experiences from Discover to fill in your days.</Empty>}
             </div>
+            {plan && plan.considered.length > 0 && (
+              <LeftOut tripId={trip._id} places={plan.considered} days={plan.days.length} editable={draft || trip.status === "upcoming"} onChanged={load} />
+            )}
           </section>
         </div>
       </PageBody>

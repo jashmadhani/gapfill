@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "export-agent-schemas": "node scripts/export-agent-schemas.mjs"
+    "export-agent-schemas": "node scripts/export-agent-schemas.mjs",
+    "predev": "node scripts/copy-maplibre-worker.mjs",
+    "prebuild": "node scripts/copy-maplibre-worker.mjs"
   },
   "dependencies": {
     "@imagekit/nodejs": "^7.12.1",
@@ -15,6 +17,7 @@
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
     "lucide-react": "^1.48.0",
+    "maplibre-gl": "^6.11.2",
     "mongoose": "^9.10.2",
     "next": "16.3.6",
     "react": "19.2.8",

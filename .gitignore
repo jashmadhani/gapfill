@@ -45,3 +45,6 @@ agent-service/.venv
 agent-service/__pycache__
 agent-service/**/__pycache__
 agent-service/.pytest_cache
+
+# maplibre worker, copied from node_modules by scripts/copy-maplibre-worker.mjs
+/public/maplibre/
