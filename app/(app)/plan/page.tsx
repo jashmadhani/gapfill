@@ -236,7 +236,7 @@ function PlanPageInner() {
                   title={`Day ${i + 1}`}
                   dateLabel={fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "long", day: "numeric", month: "short" })}
                   cards={cards}
-                  editable={draft || trip.status === "upcoming" || trip.status === "active"}
+                  editable={draft || trip.status === "upcoming"}
                   onRemove={remove}
                 />
               ))}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BellRing, Check, Clock, CloudRain, IndianRupee, MessageCircle, Phone, Smile, Ticket } from "lucide-react";
+import { BellRing, Check, CalendarRange, Clock, CloudRain, IndianRupee, MessageCircle, Phone, Smile, Ticket } from "lucide-react";
 import { api, fmtDate, inr } from "@/lib/api-client";
 import { PageBody, PageHero } from "@/components/page";
 import { Button, Card, Chip, Empty, Segmented, Sheet, Spinner, cx } from "@/components/ui";
@@ -21,6 +21,12 @@ function dayIndexFor(trip: Trip) {
   const now = new Date();
   const diff = Math.floor((now.getTime() - start.getTime()) / 86400000);
   return Math.max(0, diff);
+}
+
+function dateLabelForDay(trip: Trip, dayIdx: number) {
+  const d = new Date(trip.startDate);
+  d.setDate(d.getDate() + dayIdx);
+  return fmtDate(d.toISOString(), { weekday: "long", day: "numeric", month: "short" });
 }
 
 function Coordinator({ c }: { c: Trip["coordinator"] }) {
@@ -164,6 +170,7 @@ export default function TripPage() {
   const [data, setData] = useState<TripResponse | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fullTrip, setFullTrip] = useState(false);
 
   const load = () => api.get<TripResponse>("/api/trip").then(setData);
   useEffect(() => {
@@ -288,11 +295,37 @@ export default function TripPage() {
           {stage === "operate" && today && (
             <>
               <Risks trip={trip} />
-              <DayTimeline title={`Day ${today.idx + 1}`} dateLabel={fmtDate(trip.startDate, { weekday: "long", day: "numeric", month: "short" })} cards={today.cards} editable now={new Date()} risks={trip.risks} />
+              <button
+                type="button"
+                onClick={() => setFullTrip((v) => !v)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-stone-700 shadow-soft ring-1 ring-stone-200/70 hover:text-ink"
+              >
+                <CalendarRange size={16} aria-hidden />
+                {fullTrip ? "Show today only" : "Show full trip"}
+              </button>
+
+              {fullTrip ? (
+                <div className="space-y-5">
+                  {(plan?.days ?? []).map((cards, i) => (
+                    <DayTimeline
+                      key={i}
+                      title={`Day ${i + 1}`}
+                      dateLabel={dateLabelForDay(trip, i)}
+                      cards={cards}
+                      editable={i >= today.idx}
+                      now={new Date()}
+                      risks={trip.risks}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <DayTimeline title={`Day ${today.idx + 1}`} dateLabel={dateLabelForDay(trip, today.idx)} cards={today.cards} editable now={new Date()} risks={trip.risks} />
+              )}
+
               <ReportChange trip={trip} onDone={(n) => { setNote(n); load(); }} />
               <Coordinator c={trip.coordinator} />
               <Changes trip={trip} />
-              {plan && plan.days[today.idx + 1] && (
+              {!fullTrip && plan && plan.days[today.idx + 1] && (
                 <Link href="/plan" className="flex items-center gap-4 rounded-[1.75rem] bg-white p-4 shadow-soft">
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-stone-500">Tomorrow</span>

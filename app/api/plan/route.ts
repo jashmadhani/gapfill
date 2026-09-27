@@ -9,14 +9,16 @@ import type { GroupType } from "@/types";
 
 /** Plan is where FUTURE trips get built and edited day by day - distinct
  * from the Trip tab, which is the live hub for the trip already under way.
- * A user can hold several trips here; the switcher strip lists them all. */
+ * A user can hold several trips here; the switcher strip lists them all.
+ * Deliberately excludes "active" trips - once a trip has started, it lives
+ * on the Trip tab, not here. */
 export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   await connectToDatabase();
   const userId = user._id.toString();
-  const trips = await TripModel.find({ userId, status: { $in: ["planning", "upcoming", "active"] } }).sort({ startDate: 1 });
+  const trips = await TripModel.find({ userId, status: { $in: ["planning", "upcoming"] } }).sort({ startDate: 1 });
 
   if (trips.length === 0) return NextResponse.json({ trips: [], trip: null, plan: null });
 
