@@ -9,7 +9,8 @@ from ..next_client import NextClient
 # Everything the assistant can do with money or tickets goes through here. The allowlist is the security boundary:
 # there is NO tool that approves, pays, records a payment, refunds, or reads payment details. Those exist only behind
 # the traveller's own tap in the app (cookie session), and the agent's token cannot reach them.
-ALLOWED = ("get_payments", "propose_booking", "propose_balance_payment")
+ALLOWED = ("get_payments", "propose_booking", "propose_balance_payment", "report_weather", "report_running_late", "list_pending_changes",
+           "propose_change_option")
 MAX_TOOL_CALLS = 10  # per chat turn
 MAX_PROPOSALS = 3  # per chat turn
 

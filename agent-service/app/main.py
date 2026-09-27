@@ -139,3 +139,98 @@ async def plan_intake(body: PlanIntakeRequest, authorization: str | None = Heade
         return PlanIntakeResponse(reply=f"I have your details, but {exc} Want to try a different destination or dates?", complete=False)
 
     return PlanIntakeResponse(reply=f"Done! I've put together {created['title']} for you. Opening it now.", complete=True, tripId=created["tripId"])
+
+
+# ---------------------------------------------------------------- disruption engine + digital twin
+from typing import Literal, Optional  # noqa: E402
+
+from . import digital_twin as DT  # noqa: E402
+from .planning.disruption import run_trigger  # noqa: E402
+
+
+class TriggerRequest(BaseModel):
+    tripId: Optional[str] = None
+    type: Literal["weather", "running_late", "unavailable", "budget_change"]
+    day: Optional[int] = None
+    minutes: Optional[int] = None
+    fromTime: Optional[str] = None
+    itemId: Optional[str] = None
+    budget: Optional[float] = None
+
+
+@app.post("/disruptions/trigger")
+async def disruption_trigger(body: TriggerRequest, authorization: str | None = Header(default=None)) -> dict:
+    """Something changed: analyse the impact and store 2-3 recovery options for the trip admin."""
+    token = _extract_token(authorization)
+    verify_token(token)
+    return await run_trigger(NextClient(settings.next_internal_base_url, token), body.model_dump(exclude_none=True), source="app")
+
+
+@app.get("/digital-twin/live-weather")
+async def twin_live_weather(city: str = "Jaipur", authorization: str | None = Header(default=None)) -> dict:
+    verify_token(_extract_token(authorization))
+    return await DT.fetch_live_weather(city)
+
+
+@app.get("/digital-twin/overview")
+async def twin_overview(authorization: str | None = Header(default=None)) -> dict:
+    """Every destination's current weather and a risk score from the same simulator, for the map."""
+    verify_token(_extract_token(authorization))
+    out = []
+    for city in DT.CITY_COORDS:
+        w = await DT.fetch_live_weather(city)
+        sim = DT.simulate_digital_twin_impact(city, w["precipitation_mm"], w["temperature"], 0, "None", w["wind_speed"])["probabilistic_predictions"]
+        risk = max(sim["outdoor_activity_risk_pct"], sim["transport_delay_probability_pct"])
+        out.append({**w, "risk": round(risk, 1), "level": "high" if risk > 60 else "moderate" if risk > 30 else "low"})
+    return {"cities": out, "live": any(c["is_live"] for c in out)}
+
+
+class SimulateRequest(BaseModel):
+    city: str = "Jaipur"
+    rain_mm: float = Field(default=0, ge=0, le=500)
+    temp: float = Field(default=30, ge=-20, le=60)
+    storm_duration_hrs: float = Field(default=0, ge=0, le=72)
+    flood_level: Literal["None", "Low", "Moderate", "Severe"] = "None"
+    wind_speed: float = Field(default=10, ge=0, le=250)
+
+
+@app.post("/digital-twin/simulate")
+async def twin_simulate(body: SimulateRequest, authorization: str | None = Header(default=None)) -> dict:
+    verify_token(_extract_token(authorization))
+    return DT.simulate_digital_twin_impact(**body.model_dump())
+
+
+class MitigationRequest(BaseModel):
+    tripId: str
+    day: Optional[int] = None
+
+
+@app.post("/digital-twin/apply-mitigation")
+async def twin_apply(body: MitigationRequest, authorization: str | None = Header(default=None)) -> dict:
+    """Hand the simulated weather over to the disruption engine for a real trip: it prepares indoor swaps for the admin."""
+    token = _extract_token(authorization)
+    verify_token(token)
+    return await run_trigger(NextClient(settings.next_internal_base_url, token), {"type": "weather", "tripId": body.tripId, "day": body.day}, source="digital_twin")
+
+
+# ---------------------------------------------------------------- booking & ticketing agent (Gemini, Mahavir's design)
+from . import booking_agent  # noqa: E402
+
+
+class BookingChatRequest(BaseModel):
+    message: str
+    history: list[ChatTurn] = Field(default_factory=list)
+
+
+@app.post("/booking/chat")
+async def booking_chat(body: BookingChatRequest, authorization: str | None = Header(default=None)) -> dict:
+    token = _extract_token(authorization)
+    verify_token(token)
+    client = NextClient(settings.next_internal_base_url, token)
+    history = [{"role": t.role, "content": t.content} for t in body.history]
+    return await booking_agent.chat(client, history, body.message)
+
+
+@app.get("/booking/status")
+async def booking_status() -> dict:
+    return {"engine": "gemini" if booking_agent.gemini_key() else "rules (no GEMINI_API_KEY set)", "model": booking_agent.gemini_model()}

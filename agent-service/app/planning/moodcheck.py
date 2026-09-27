@@ -91,4 +91,8 @@ async def mood_check_in(client: NextClient, text: str, day: int | None = None) -
     pool = {p["id"]: to_place(p) | {"poiId": p["id"]} for p in catalog["pois"]}
     members = normalise_members(data.get("members"), data.get("groupType", "solo"), data.get("themeTags", []))
     result = analyse(members, days[index], pool, on=day_date(data["startDate"], index), theme_tags=data.get("themeTags", []), moods=moods)
-    return {"moods": moods, "source": source, "day": index + 1, **result}
+    # Store the proposals as a change event so the trip admin can apply them with one tap.
+    from .disruption import Day, from_mood, store
+    event = from_mood(Day(members, days[index], pool, day_date(data["startDate"], index), data.get("themeTags", []), moods=moods), result["proposals"], moods)
+    saved = await store(client, event, index + 1, "traveller", data.get("tripId")) if event else None
+    return {"moods": moods, "source": source, "day": index + 1, **result, "changeId": saved and saved.get("id")}

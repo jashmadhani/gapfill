@@ -48,6 +48,8 @@ def to_place(p: dict) -> dict:
         "closedWeekdays": attrs.get("closedWeekdays") or [],
         "minAge": attrs.get("minAge") or 0,
         "prefHour": _pref_hour(attrs),
+        "openMin": attrs.get("openMin") or 0,
+        "closeMin": (attrs.get("openMin") or 0) + (attrs.get("openWindowMin") or 24 * 60),
         "address": None,
         "ml": _ml_place(p, attrs),
     }

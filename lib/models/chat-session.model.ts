@@ -19,7 +19,7 @@ const ChatSessionSchema = new Schema<Record<string, unknown>>(
     sessionId: { type: String, required: true, unique: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     title: { type: String, default: "New chat" },
-    tag: { type: String, enum: ["normal", "plan"], default: "normal" },
+    tag: { type: String, enum: ["normal", "plan", "booking"], default: "normal" },
     planTripId: { type: Schema.Types.ObjectId, ref: "Trip" },
     messages: { type: [Schema.Types.Mixed], default: [] },
   },

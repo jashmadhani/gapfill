@@ -6,6 +6,8 @@ import { PaymentIntentModel, type IntentStatus, type PaymentIntentHydrated } fro
 import { TicketModel } from "@/lib/models/ticket.model";
 import { AgentAuditModel } from "@/lib/models/agent-audit.model";
 import { getActivePlanForTrip } from "@/lib/trip-helpers";
+import { ChangeEventModel } from "@/lib/models/change-event.model";
+import { applyOption, optionCharge } from "@/lib/disruptions";
 import type { EventCard } from "@/types";
 
 /**
@@ -39,20 +41,43 @@ export function tripTotal(trip: TripHydratedDocument, plan: PlanHydratedDocument
   return { perPerson, people: headcount(trip), total: Math.round(perPerson * headcount(trip)) };
 }
 
-function planHash(trip: TripHydratedDocument, plan: PlanHydratedDocument, kind: string, mode: string | undefined, amount: number) {
+function planHash(trip: TripHydratedDocument, plan: PlanHydratedDocument, kind: string, mode: string | undefined, amount: number, extra = "") {
   const items = liveCards(plan)
     .map((c) => [c.itemId, c.status, c.typicalSpend, c.startTime])
     .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-  return createHash("sha256").update(JSON.stringify({ trip: [trip._id.toString(), trip.status], items, kind, mode, amount })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ trip: [trip._id.toString(), trip.status], items, kind, mode, amount, extra })).digest("hex");
 }
 
 const line = (label: string, amount: number, strong = false) => ({ label, amount: Math.round(amount), strong });
 
 /** Work out exactly what an action costs, without changing anything. */
-export async function quote(trip: TripHydratedDocument, kind: "booking" | "balance", mode: "deposit" | "full" = "deposit") {
+export async function quote(trip: TripHydratedDocument, kind: "booking" | "balance" | "change", mode: "deposit" | "full" = "deposit", change?: { eventId: string; optionKey: string }) {
   const plan = await getActivePlanForTrip(trip._id.toString());
   if (!plan) throw new GateError("This trip has no plan yet.");
   const t = tripTotal(trip, plan);
+
+  if (kind === "change") {
+    const event = change && (await ChangeEventModel.findOne({ _id: change.eventId, tripId: trip._id }).catch(() => null));
+    if (!event || event.status !== "pending") throw new GateError("That change is no longer waiting for a decision.");
+    const option = event.options.find((o) => o.key === change!.optionKey);
+    if (!option) throw new GateError("Unknown option.");
+    const amount = optionCharge(trip, option);
+    const refund = option.costPerPerson < 0 && trip.status !== "planning" ? Math.round(-option.costPerPerson * Math.max(1, t.people)) : 0;
+    return {
+      plan,
+      amount,
+      hash: planHash(trip, plan, kind, undefined, amount, `${change!.eventId}:${change!.optionKey}`),
+      summary: {
+        title: `${event.label}: ${option.label}`,
+        subtitle: option.summary,
+        lines: [
+          line("Predicted group fit", option.fit),
+          ...(amount > 0 ? [line("Extra to pay now", amount, true)] : refund > 0 ? [line("Comes off your balance", refund, true)] : [line("No extra cost", 0, true)]),
+        ],
+        policy: option.changes.length ? "Replaced or removed stops have their tickets voided; new stops are booked and ticketed." : "Nothing in the plan changes.",
+      },
+    };
+  }
 
   if (kind === "booking") {
     if (trip.status !== "planning") throw new GateError("This trip is already booked.");
@@ -100,9 +125,9 @@ export async function audit(userId: Id, tripId: Id | undefined, actor: "agent" |
 }
 
 /** Create an approval card. Nothing is charged, booked or refunded until the admin approves and pays. */
-export async function propose(trip: TripHydratedDocument, userId: string, kind: "booking" | "balance", mode: "deposit" | "full", createdBy: "agent" | "traveller") {
-  if (trip.userId.toString() !== userId) throw new GateError("Only the trip admin can book or pay for this trip.");
-  const q = await quote(trip, kind, mode);
+export async function propose(trip: TripHydratedDocument, userId: string, kind: "booking" | "balance" | "change", mode: "deposit" | "full", createdBy: "agent" | "traveller", change?: { eventId: string; optionKey: string }) {
+  if (trip.userId.toString() !== userId) throw new GateError("Only the trip admin can book, pay for or change this trip.");
+  const q = await quote(trip, kind, mode, change);
   if (createdBy === "agent" && q.amount > maxProposal()) throw new GateError("That amount is above what the assistant may prepare. Please use the Book button yourself.");
   // One live card at a time: a new proposal replaces an older open one.
   await PaymentIntentModel.updateMany({ tripId: trip._id, status: { $in: OPEN } }, { status: "cancelled" });
@@ -112,6 +137,8 @@ export async function propose(trip: TripHydratedDocument, userId: string, kind: 
     userId: trip.userId,
     kind,
     mode: kind === "booking" ? mode : undefined,
+    eventId: change?.eventId,
+    optionKey: change?.optionKey,
     amount: q.amount,
     summary: q.summary,
     hash: q.hash,
@@ -128,7 +155,7 @@ async function freshOrFail(intent: PaymentIntentHydrated, trip: TripHydratedDocu
     await intent.save();
     throw new GateError("This approval expired. Ask for a new one.");
   }
-  const q = await quote(trip, intent.kind, intent.mode ?? "deposit").catch(() => null);
+  const q = await quote(trip, intent.kind, intent.mode ?? "deposit", intent.eventId && intent.optionKey ? { eventId: intent.eventId, optionKey: intent.optionKey } : undefined).catch(() => null);
   if (!q || q.hash !== intent.hash) {
     intent.status = "stale";
     await intent.save();
@@ -145,6 +172,12 @@ export async function approve(intent: PaymentIntentHydrated, userId: string) {
   const trip = await TripModel.findById(intent.tripId);
   if (!trip) throw new GateError("Trip not found.");
   await freshOrFail(intent, trip);
+  if (intent.amount === 0) {
+    intent.status = "awaiting_payment";
+    await intent.save();
+    await completePayment(intent, userId);
+    return { checkoutUrl: null, applied: true };
+  }
   intent.status = "awaiting_payment";
   intent.providerRef = `sbx_${randomBytes(8).toString("hex")}`;
   await intent.save();
@@ -167,12 +200,21 @@ export async function completePayment(intent: PaymentIntentHydrated, userId: str
   if (!trip) throw new GateError("Trip not found.");
   const q = await freshOrFail(intent, trip);
   const plan = q.plan;
-  intent.paymentId = `pay_sbx_${randomBytes(8).toString("hex")}`;
+  if (intent.amount > 0) intent.paymentId = `pay_sbx_${randomBytes(8).toString("hex")}`;
   intent.status = "paid";
   await intent.save();
 
   const tickets: string[] = [];
-  if (intent.kind === "booking") {
+  if (intent.kind === "change") {
+    const event = await ChangeEventModel.findById(intent.eventId);
+    const option = event?.options.find((o) => o.key === intent.optionKey);
+    if (!event || !option) throw new GateError("That change is no longer available.");
+    await applyOption(trip, plan, event, option);
+    if (intent.amount > 0) {
+      trip.payments = { ...trip.payments, paid: (trip.payments?.paid ?? 0) + intent.amount, balance: (trip.payments?.balance ?? 0) - intent.amount };
+      trip.totalSpent = (trip.totalSpent ?? 0) + intent.amount;
+    }
+  } else if (intent.kind === "booking") {
     const t = tripTotal(trip, plan);
     const now = new Date().toISOString();
     for (const card of plan.days.flat()) {
@@ -191,7 +233,7 @@ export async function completePayment(intent: PaymentIntentHydrated, userId: str
     trip.status = "upcoming";
     trip.payments = { total: t.total, paid: intent.amount, balance: t.total - intent.amount };
     trip.totalSpent = intent.amount;
-  } else {
+  } else if (intent.kind === "balance") {
     trip.payments = { ...trip.payments, paid: trip.payments.total, balance: 0 };
     trip.totalSpent = trip.payments.total;
   }

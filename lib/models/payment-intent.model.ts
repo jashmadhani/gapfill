@@ -14,7 +14,10 @@ export interface PaymentIntentDoc {
   intentId: string;
   tripId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId; // the trip admin, the only person who can approve
-  kind: "booking" | "balance";
+  kind: "booking" | "balance" | "change";
+  /** kind "change": which recovery option of which change event this pays for. */
+  eventId?: string;
+  optionKey?: string;
   mode?: "deposit" | "full";
   amount: number;
   summary: { title: string; subtitle: string; lines: IntentLine[]; policy: string };
@@ -38,6 +41,8 @@ const IntentSchema = new Schema<PaymentIntentDoc>(
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
     kind: { type: String, required: true },
     mode: { type: String },
+    eventId: { type: String },
+    optionKey: { type: String },
     amount: { type: Number, required: true },
     summary: { type: Schema.Types.Mixed, required: true },
     hash: { type: String, required: true },
