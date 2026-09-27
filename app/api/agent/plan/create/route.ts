@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { TripModel } from "@/lib/models/trip.model";
 import { PlanModel } from "@/lib/models/plan.model";
-import type { EventCard, GroupType, PlanConflict, PlanHotel } from "@/types";
+import type { ConsideredPlace, EventCard, GroupType, PlanConflict, PlanHotel } from "@/types";
 
 interface CreatePlanBody {
   destination: string;
@@ -19,6 +19,7 @@ interface CreatePlanBody {
   narrative: string;
   notes: string[];
   conflicts: PlanConflict[];
+  considered?: ConsideredPlace[];
 }
 
 /** Called by agent-service once its planning pipeline (geo/dwell/scoring/
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest) {
     alternatives: [],
     conflicts: body.conflicts || [],
     notes: body.notes || [],
+    considered: body.considered || [],
   });
 
   return NextResponse.json({ tripId: trip._id.toString(), planId: plan.planId, title: trip.title }, { status: 201 });

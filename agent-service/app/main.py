@@ -61,7 +61,7 @@ class PlanCreatedResponse(BaseModel):
 
 
 async def _run_and_persist(client: NextClient, destination: str, start_date: str, end_date: str, budget: float, currency: str, group_type: str, theme_tags: list[str]) -> dict:
-    generated = await generate_plan(client, destination, start_date, end_date, budget, theme_tags)
+    generated = await generate_plan(client, destination, start_date, end_date, budget, theme_tags, group_type)
     return await client.post(
         "/api/agent/plan/create",
         {

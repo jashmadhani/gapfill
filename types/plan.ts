@@ -65,6 +65,27 @@ export interface PlanHotel {
   source: "geoapify" | "seed" | "manual";
 }
 
+/** A candidate the planner looked at but did not put in the itinerary. Kept on the plan so the
+ * traveller can see what was passed over, what it costs, and why - and swap it in. */
+export interface ConsideredPlace {
+  poiId?: Id | null; // ref -> POI when it came from the curated catalog
+  key: string;
+  name: string;
+  price: number; // per person, INR
+  priceSource: "catalog" | "estimate";
+  rating?: number | null;
+  ratingCount?: number | null;
+  durationMin?: number | null;
+  tags: string[];
+  imageUrl?: string | null;
+  location: GeoPoint;
+  distanceKm?: number | null;
+  score?: number | null;
+  rank?: number | null; // position among eligible candidates, null when excluded outright
+  verdict: "left_out" | "excluded";
+  reasons: string[];
+}
+
 export type PlanStatus = "active" | "superseded" | "discarded";
 
 /**
@@ -97,6 +118,7 @@ export interface PlanDocument {
   alternatives: Record<string, unknown>[];
   conflicts: PlanConflict[];
   notes: string[]; // "how we optimised this" bullets shown under the price card
+  considered: ConsideredPlace[]; // candidates left out of this version, each with its reasons
 
   createdAt: ISODateTime;
   /** When this exact version's content was last mutated in place (should be

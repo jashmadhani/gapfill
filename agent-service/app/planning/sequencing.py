@@ -59,8 +59,9 @@ def _iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def _make_card(item_id: str, card_type: str, title: str, activity_type: str, start: datetime, duration_min: int, location: dict | None, spend: int, fit_reason: str | None) -> dict:
+def _make_card(item_id: str, card_type: str, title: str, activity_type: str, start: datetime, duration_min: int, location: dict | None, spend: int, fit_reason: str | None, extra: dict | None = None) -> dict:
     return {
+        **(extra or {}),
         "itemId": item_id,
         "type": card_type,
         "startTime": _iso(start),
@@ -83,7 +84,12 @@ def build_day(day_index: int, date_str: str, places: list[dict], start_hour: int
     simple_kmeans). Returns an ordered list of EventCard dicts: activities
     with travel cards between them, and a lunch/food stop placed near
     midday."""
-    ordered = optimize_route(places)
+    if places and all(pl.get("prefHour") is not None for pl in places):
+        # Catalog stops carry a preferred hour (sunrise walk early, sunset late): honour it,
+        # nearest-neighbour ordering only breaks ties.
+        ordered = sorted(optimize_route(places), key=lambda pl: pl["prefHour"])
+    else:
+        ordered = optimize_route(places)
     day_start = datetime.fromisoformat(date_str).replace(hour=start_hour, minute=0, second=0)
     cursor = day_start
     cards: list[dict] = []
@@ -91,6 +97,14 @@ def build_day(day_index: int, date_str: str, places: list[dict], start_hour: int
     prev_point: dict | None = None
 
     for i, place in enumerate(ordered):
+        if place.get("prefHour") is not None:
+            target = day_start.replace(hour=int(place["prefHour"]), minute=int((place["prefHour"] % 1) * 60))
+            if cursor < target:
+                # Waiting past lunchtime for a late stop: eat first rather than at 4pm.
+                if not lunch_inserted and lunch and cursor.hour < 14 and target.hour >= 14:
+                    cursor = _add_meal(cards, day_index, "lunch", lunch, max(cursor, day_start.replace(hour=12, minute=30)), prev_point)
+                    lunch_inserted = True
+                cursor = max(cursor, target)
         if prev_point is not None:
             distance_km = haversine_km(prev_point["lat"], prev_point["lng"], place["lat"], place["lng"])
             if distance_km > 0.6:
@@ -109,16 +123,17 @@ def build_day(day_index: int, date_str: str, places: list[dict], start_hour: int
             cursor = _add_meal(cards, day_index, "lunch", lunch, cursor, prev_point)
             lunch_inserted = True
 
-        dwell = estimate_dwell_minutes(place.get("categories", []))
+        dwell = {"typical": place["dwellMin"]} if place.get("dwellMin") else estimate_dwell_minutes(place.get("categories", []))
         card_type = "meal" if is_food_poi(place.get("categories", [])) else "activity"
         if card_type == "meal":
             lunch_inserted = lunch_inserted or (11 <= cursor.hour <= 15)
         cards.append(
             _make_card(
-                f"d{day_index}_{place['id']}", card_type, place["name"], (place.get("categories") or ["poi"])[0],
+                f"d{day_index}_{place['id']}", card_type, place["name"], place.get("activityType") or (place.get("categories") or ["poi"])[0],
                 cursor, dwell["typical"], {"lat": place["lat"], "lng": place["lng"]},
-                _typical_spend(place.get("categories", [])),
+                place["spend"] if place.get("spend") is not None else _typical_spend(place.get("categories", [])),
                 place.get("fitReason"),
+                {k: v for k, v in (("poiId", place.get("poiId")), ("photoRef", place.get("imageUrl"))) if v},
             )
         )
         cursor += timedelta(minutes=dwell["typical"])
@@ -126,7 +141,7 @@ def build_day(day_index: int, date_str: str, places: list[dict], start_hour: int
 
     if not lunch_inserted and lunch:
         cursor = _add_meal(cards, day_index, "lunch", lunch, cursor, prev_point)
-    if dinner:
+    if dinner and cursor.hour < 21:  # nothing left to eat after a late dinner-style stop
         if cursor.hour < 19:
             cursor = cursor.replace(hour=19, minute=0)
         _add_meal(cards, day_index, "dinner", dinner, cursor, prev_point)

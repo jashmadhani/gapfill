@@ -1,5 +1,5 @@
 import mongoose, { Schema, type HydratedDocument, type Model } from "mongoose";
-import type { EventCard, PlanConflict, PlanHotel, PlanStatus } from "@/types";
+import type { ConsideredPlace, EventCard, PlanConflict, PlanHotel, PlanStatus } from "@/types";
 
 export interface PlanDoc {
   planId: string;
@@ -19,6 +19,7 @@ export interface PlanDoc {
   alternatives: Record<string, unknown>[];
   conflicts: PlanConflict[];
   notes: string[];
+  considered: ConsideredPlace[];
 
   createdAt: Date;
   modifiedAt: Date;
@@ -45,6 +46,7 @@ const PlanSchema = new Schema<Record<string, unknown>>(
     alternatives: { type: [Schema.Types.Mixed], default: [] },
     conflicts: { type: [Schema.Types.Mixed], default: [] },
     notes: { type: [String], default: [] },
+    considered: { type: [Schema.Types.Mixed], default: [] },
 
     modifiedAt: { type: Date, default: () => new Date() },
   },
