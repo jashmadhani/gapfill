@@ -17,7 +17,7 @@ export interface PendingChange {
 
 /** Something changed (rain, running late, a stop closed, over budget). The disruption engine already prepared 2-3
  * scored options; only the trip admin can apply one, and applying goes through the same payment gate as booking. */
-export default function PendingChanges({ tripId, changes, isAdmin, onChanged }: { tripId: string; changes: PendingChange[]; isAdmin: boolean; onChanged: () => void }) {
+export default function PendingChanges({ tripId, changes, isAdmin, onChanged, showReportButtons = true }: { tripId: string; changes: PendingChange[]; isAdmin: boolean; onChanged: () => void; showReportButtons?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,14 +49,16 @@ export default function PendingChanges({ tripId, changes, isAdmin, onChanged }: 
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <Button variant="secondary" disabled={!!busy} onClick={() => report("weather", { day: 1 })} className="flex-1">
-          <CloudRain size={15} aria-hidden /> {busy === "weather" ? "Checking..." : "It's raining"}
-        </Button>
-        <Button variant="secondary" disabled={!!busy} onClick={() => report("running_late", { minutes: 45 })} className="flex-1">
-          <Clock size={15} aria-hidden /> {busy === "running_late" ? "Checking..." : "Running late"}
-        </Button>
-      </div>
+      {showReportButtons && (
+        <div className="flex gap-2">
+          <Button variant="secondary" disabled={!!busy} onClick={() => report("weather", { day: 1 })} className="flex-1">
+            <CloudRain size={15} aria-hidden /> {busy === "weather" ? "Checking..." : "It's raining"}
+          </Button>
+          <Button variant="secondary" disabled={!!busy} onClick={() => report("running_late", { minutes: 45 })} className="flex-1">
+            <Clock size={15} aria-hidden /> {busy === "running_late" ? "Checking..." : "Running late"}
+          </Button>
+        </div>
+      )}
       {error && <p role="alert" className="rounded-2xl bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-700">{error}</p>}
 
       {changes.map((c) => (

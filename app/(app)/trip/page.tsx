@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BellRing, Check, CalendarRange, Clock, CloudRain, IndianRupee, MessageCircle, Phone, Smile, Ticket } from "lucide-react";
+import { BellRing, Check, CalendarRange, Clock, IndianRupee, MessageCircle, Phone, Ticket } from "lucide-react";
 import { api, fmtDate, inr } from "@/lib/api-client";
 import { PageBody, PageHero } from "@/components/page";
-import { Button, Card, Chip, Empty, Segmented, Sheet, Spinner, cx } from "@/components/ui";
+import { Button, Card, Chip, Empty, Sheet, Spinner, cx } from "@/components/ui";
 import DayTimeline from "@/components/day-timeline";
 import RouteMap from "@/components/route-map";
+import ApprovalCard, { type PaymentsData } from "@/components/plan/approval-card";
+import PendingChanges, { type PendingChange } from "@/components/plan/pending-changes";
 import type { TripStage } from "@/lib/trip-helpers";
 import type { PlanDocument, Trip } from "@/types";
 
@@ -15,6 +17,7 @@ interface TripResponse {
   trip: Trip | null;
   plan: PlanDocument | null;
   stage: TripStage | null;
+  role: "admin" | "member" | null;
 }
 
 function dayIndexFor(trip: Trip) {
@@ -84,10 +87,12 @@ function Changes({ trip }: { trip: Trip }) {
   );
 }
 
-function ReportChange({ trip, onDone }: { trip: Trip; onDone: (note: string) => void }) {
+/** Weather and running-late go through the real disruption engine (POST /api/disruptions): it scores every
+ * affected stop with the ML fit model and prepares 2-3 options, shown below in <PendingChanges>. Only the trip
+ * admin applies one - this button just reports the problem, anyone on the trip can do that. */
+function ReportChange({ trip, day, onReported, onBudgetDone, isAdmin }: { trip: Trip; day: number; onReported: () => void; onBudgetDone: (note: string) => void; isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"menu" | "late" | "budget" | "mood">("menu");
-  const [late, setLate] = useState(30);
+  const [view, setView] = useState<"menu" | "budget">("menu");
   const [budget, setBudget] = useState(trip.totalBudget);
   const [busy, setBusy] = useState(false);
   const close = () => {
@@ -95,18 +100,29 @@ function ReportChange({ trip, onDone }: { trip: Trip; onDone: (note: string) => 
     setView("menu");
   };
 
-  const fire = async (body: Record<string, unknown>) => {
+  const report = async (type: "weather" | "running_late", extra: Record<string, unknown> = {}) => {
     setBusy(true);
     try {
-      const r = await api.patch<{ note: string }>("/api/trip", { tripId: trip._id, ...body });
-      onDone(r.note);
+      await api.post("/api/disruptions", { tripId: trip._id, type, day, ...extra });
+      onReported();
     } finally {
       setBusy(false);
       close();
     }
   };
 
-  const opt = (Icon: typeof Smile, title: string, sub: string, onClick: () => void) => (
+  const applyBudget = async () => {
+    setBusy(true);
+    try {
+      const r = await api.patch<{ note: string }>("/api/trip", { tripId: trip._id, action: "report_budget", newBudget: budget });
+      onBudgetDone(r.note);
+    } finally {
+      setBusy(false);
+      close();
+    }
+  };
+
+  const opt = (Icon: typeof Clock, title: string, sub: string, onClick: () => void) => (
     <button type="button" onClick={onClick} disabled={busy} className="flex min-h-16 w-full items-center gap-3 rounded-2xl bg-white px-4 text-left shadow-soft ring-1 ring-stone-200/70 transition hover:ring-stone-300 disabled:opacity-50">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rani-50 text-rani-600">
         <Icon size={18} aria-hidden />
@@ -123,21 +139,13 @@ function ReportChange({ trip, onDone }: { trip: Trip; onDone: (note: string) => 
       <Button variant="secondary" className="w-full" onClick={() => setOpen(true)}>
         <BellRing size={16} aria-hidden /> Report a change
       </Button>
-      <Sheet open={open} onClose={close} title={view === "late" ? "How late are you?" : view === "budget" ? "New total budget" : "What changed?"}>
+      <Sheet open={open} onClose={close} title={view === "budget" ? "New total budget" : "What changed?"}>
         {view === "menu" && (
           <div className="space-y-2">
-            {opt(Clock, "Running late", "We'll shift today's plan", () => setView("late"))}
-            {opt(CloudRain, "It's raining", "Flag outdoor plans for a swap", () => fire({ action: "report_weather" }))}
-            {opt(IndianRupee, "Change my budget", "Update your trip total", () => setView("budget"))}
+            {opt(Clock, "Running late", "Scores today's stops and prepares options", () => report("running_late", { minutes: 45 }))}
+            {opt(Clock, "It's raining", "Prepares indoor swaps for today", () => report("weather"))}
+            {isAdmin && opt(IndianRupee, "Change my budget", "Update your trip total", () => setView("budget"))}
             {opt(MessageCircle, "Something else", "Tell the trip assistant", () => close())}
-          </div>
-        )}
-        {view === "late" && (
-          <div className="space-y-4">
-            <Segmented value={late} onChange={setLate} options={[15, 30, 60, 90].map((m) => ({ value: m, label: `${m} min` }))} />
-            <Button className="w-full" disabled={busy} onClick={() => fire({ action: "report_late", minutes: late })}>
-              Update my day
-            </Button>
           </div>
         )}
         {view === "budget" && (
@@ -157,7 +165,7 @@ function ReportChange({ trip, onDone }: { trip: Trip; onDone: (note: string) => 
               aria-label="New budget"
               className="w-full accent-rani-600"
             />
-            <Button className="w-full" disabled={busy} onClick={() => fire({ action: "report_budget", newBudget: budget })}>
+            <Button className="w-full" disabled={busy} onClick={applyBudget}>
               Apply budget
             </Button>
           </div>
@@ -172,10 +180,25 @@ export default function TripPage() {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [fullTrip, setFullTrip] = useState(false);
+  const [payments, setPayments] = useState<PaymentsData | null>(null);
+  const [changes, setChanges] = useState<PendingChange[]>([]);
 
-  const load = () => api.get<TripResponse>("/api/trip").then(setData);
+  const load = () => {
+    api.get<TripResponse>("/api/trip").then((d) => {
+      setData(d);
+      if (d.trip) {
+        api.get<PaymentsData>(`/api/payments?tripId=${d.trip._id}`).then(setPayments).catch(() => {});
+        api.get<{ changes: PendingChange[] }>(`/api/disruptions?tripId=${d.trip._id}`).then((r) => setChanges(r.changes)).catch(() => {});
+      }
+    });
+  };
   useEffect(() => {
     load();
+    // The group's admin might apply a change or approve a payment from elsewhere while this is open.
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 15000);
+    return () => clearInterval(t);
   }, []);
 
   const onSeed = async () => {
@@ -212,7 +235,8 @@ export default function TripPage() {
   }, [data]);
 
   if (!data) return <PageBody><Spinner /></PageBody>;
-  const { trip, plan, stage } = data;
+  const { trip, plan, stage, role } = data;
+  const isAdmin = role !== "member";
 
   if (!trip) {
     return (
@@ -288,6 +312,8 @@ export default function TripPage() {
                   <Ticket size={22} aria-hidden />
                 </span>
               </Card>
+              {payments && <ApprovalCard data={payments} onChanged={load} />}
+              <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} showReportButtons={false} />
               <Coordinator c={trip.coordinator} />
               <Changes trip={trip} />
             </>
@@ -325,7 +351,9 @@ export default function TripPage() {
                 <DayTimeline title={`Day ${today.idx + 1}`} dateLabel={dateLabelForDay(trip, today.idx)} cards={today.cards} editable now={new Date()} risks={trip.risks} />
               )}
 
-              <ReportChange trip={trip} onDone={(n) => { setNote(n); load(); }} />
+              {payments && <ApprovalCard data={payments} onChanged={load} />}
+              <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} showReportButtons={false} />
+              <ReportChange trip={trip} day={today.idx + 1} isAdmin={isAdmin} onReported={load} onBudgetDone={(n) => { setNote(n); load(); }} />
               <Coordinator c={trip.coordinator} />
               <Changes trip={trip} />
               {!fullTrip && plan && plan.days[today.idx + 1] && (

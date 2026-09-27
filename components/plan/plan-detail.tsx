@@ -79,6 +79,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
 
   const isAdmin = data.role !== "member";
   const draft = trip.status === "planning";
+  const booked = trip.status === "upcoming" || trip.status === "active";
   const errors = (plan?.conflicts ?? []).filter((c) => c.level === "error");
 
   return (
@@ -133,8 +134,22 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                 dayLabels={plan.days.map((_, i) => fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric" }))}
               />
             )}
-            <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} />
-            {payments && <ApprovalCard data={payments} onChanged={load} />}
+            {booked && (
+              <Card className="flex items-center gap-4 bg-ink p-4 text-white">
+                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/10">
+                  <CalendarDays size={22} aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-white/70">This trip is booked</span>
+                  <span className="block text-[15px]">Today&apos;s plan, tickets and live changes are on the Trip tab.</span>
+                </span>
+                <Link href="/trip" className="inline-block shrink-0">
+                  <Button variant="secondary" className="min-h-11">Open Trip</Button>
+                </Link>
+              </Card>
+            )}
+            {!booked && <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} />}
+            {!booked && payments && <ApprovalCard data={payments} onChanged={load} />}
             <GroupFairness summary={plan?.fitSummary} />
             {group && <GroupPanel tripId={trip._id} group={group} onChanged={load} />}
             {plan?.hotel && (
@@ -215,27 +230,49 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
           </section>
 
           <section className="mt-6 space-y-5 lg:mt-0">
-            <div className="flex items-center justify-between pt-1">
-              <h2 className="h2-section text-ink">Day by day</h2>
-              <Link href="/discover" className="text-sm font-semibold text-rani-600">
-                Add from Discover
-              </Link>
-            </div>
-            <div className="space-y-5">
-              {(plan?.days ?? []).map((cards, i) => (
-                <DayTimeline
-                  key={i}
-                  title={`Day ${i + 1}`}
-                  dateLabel={fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "long", day: "numeric", month: "short" })}
-                  cards={cards}
-                  editable={isAdmin && (draft || trip.status === "upcoming")}
-                  onRemove={remove}
-                />
-              ))}
-              {(!plan || plan.days.length === 0) && <Empty title="Nothing planned yet">Add experiences from Discover to fill in your days.</Empty>}
-            </div>
-            {plan && plan.considered.length > 0 && (
-              <LeftOut tripId={trip._id} places={plan.considered} days={plan.days.length} editable={isAdmin && (draft || trip.status === "upcoming")} onChanged={load} votes={group?.votes} />
+            {booked ? (
+              <>
+                <h2 className="h2-section text-ink">Itinerary</h2>
+                <p className="-mt-3 text-sm text-stone-600">Read-only here now it&apos;s booked. Report a change or see today&apos;s plan on the Trip tab.</p>
+                <ul className="space-y-2.5">
+                  {(plan?.days ?? []).map((cards, i) => {
+                    const live = cards.filter((c) => c.status !== "dismissed" && (c.type === "activity" || c.type === "meal"));
+                    return (
+                      <li key={i} className="rounded-2xl bg-white p-4 shadow-soft">
+                        <p className="font-semibold text-ink">
+                          Day {i + 1} · {fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric", month: "short" })}
+                        </p>
+                        <p className="mt-0.5 truncate text-sm text-stone-600">{live.length ? live.map((c) => c.title).join(" · ") : "Free day"}</p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between pt-1">
+                  <h2 className="h2-section text-ink">Day by day</h2>
+                  <Link href="/discover" className="text-sm font-semibold text-rani-600">
+                    Add from Discover
+                  </Link>
+                </div>
+                <div className="space-y-5">
+                  {(plan?.days ?? []).map((cards, i) => (
+                    <DayTimeline
+                      key={i}
+                      title={`Day ${i + 1}`}
+                      dateLabel={fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "long", day: "numeric", month: "short" })}
+                      cards={cards}
+                      editable={isAdmin && draft}
+                      onRemove={remove}
+                    />
+                  ))}
+                  {(!plan || plan.days.length === 0) && <Empty title="Nothing planned yet">Add experiences from Discover to fill in your days.</Empty>}
+                </div>
+                {plan && plan.considered.length > 0 && (
+                  <LeftOut tripId={trip._id} places={plan.considered} days={plan.days.length} editable={isAdmin && draft} onChanged={load} votes={group?.votes} />
+                )}
+              </>
             )}
           </section>
         </div>
