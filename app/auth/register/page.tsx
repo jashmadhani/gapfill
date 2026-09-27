@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { safeNext } from "@/lib/safe-next";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { AuthShell, FieldLabel, inputClassName } from "@/components/auth-shell";
 import { Button } from "@/components/ui";
 import { GoogleButton } from "@/components/google-button";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get("next"), "");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,7 +45,7 @@ export default function RegisterPage() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "Couldn't create your account. Try again.");
       }
-      router.push("/discover");
+      router.push(next || "/discover");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -59,7 +62,7 @@ export default function RegisterPage() {
       footer={
         <>
           Already have an account?{" "}
-          <Link href="/auth/login" className="font-semibold text-rani-600 hover:text-rani-700">
+          <Link href={next ? `/auth/login?next=${encodeURIComponent(next)}` : "/auth/login"} className="font-semibold text-rani-600 hover:text-rani-700">
             Log in
           </Link>
         </>
@@ -164,5 +167,13 @@ export default function RegisterPage() {
         </form>
       </div>
     </AuthShell>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

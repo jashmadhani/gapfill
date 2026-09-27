@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Clock, Plus, Star } from "lucide-react";
+import { ChevronDown, Clock, Plus, Star, ThumbsUp } from "lucide-react";
 import { api, inr } from "@/lib/api-client";
 import { Button, Card, Chip, Photo, cx } from "@/components/ui";
 import { FitBadge, FitChips } from "@/components/group";
@@ -9,7 +9,7 @@ import type { ConsideredPlace } from "@/types";
 
 const hours = (m: number) => (m >= 60 ? `${Math.round(m / 6) / 10} h` : `${m} min`);
 
-function Candidate({ place, days, editable, busy, onAdd }: { place: ConsideredPlace; days: number; editable: boolean; busy: boolean; onAdd: (day: number) => void }) {
+function Candidate({ place, days, editable, busy, onAdd, vote, onVote }: { place: ConsideredPlace; days: number; editable: boolean; busy: boolean; onAdd: (day: number) => void; vote?: { count: number; iVoted: boolean }; onVote: () => void }) {
   const [first, ...more] = place.reasons;
   const excluded = place.verdict === "excluded";
   const [day, setDay] = useState(1);
@@ -63,6 +63,13 @@ function Candidate({ place, days, editable, busy, onAdd }: { place: ConsideredPl
         </ul>
       )}
 
+      {!excluded && (
+        <div className="mt-3">
+          <button type="button" aria-pressed={!!vote?.iVoted} onClick={onVote} className={cx("inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 text-sm font-bold ring-1 transition", vote?.iVoted ? "bg-rani-600 text-white ring-rani-600" : "bg-white text-stone-700 ring-stone-200")}>
+            <ThumbsUp size={14} aria-hidden /> {vote?.iVoted ? "You want this" : "I want this"} · {vote?.count ?? 0}
+          </button>
+        </div>
+      )}
       {editable && !excluded && days > 0 && (
         <div className="mt-3 flex items-center gap-2">
           <label className="sr-only" htmlFor={`day-${place.key}`}>
@@ -92,7 +99,7 @@ function Candidate({ place, days, editable, busy, onAdd }: { place: ConsideredPl
 /** "Left out, and why": every place the planner looked at and did not put in the itinerary, with its
  * price and plain-language reasons. Ported from the original app's "Considered, not added" section;
  * the data now lives on the plan document (PlanDocument.considered). */
-export default function LeftOut({ tripId, places, days, editable, onChanged }: { tripId: string; places: ConsideredPlace[]; days: number; editable: boolean; onChanged: () => void }) {
+export default function LeftOut({ tripId, places, days, editable, onChanged, votes }: { tripId: string; places: ConsideredPlace[]; days: number; editable: boolean; onChanged: () => void; votes?: Record<string, { count: number; iVoted: boolean }> }) {
   const [open, setOpen] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +139,7 @@ export default function LeftOut({ tripId, places, days, editable, onChanged }: {
         {open && (
           <ul className="space-y-2.5 bg-stone-50/60 p-3">
             {places.map((p) => (
-              <Candidate key={p.key} place={p} days={days} editable={editable} busy={busy === p.key} onAdd={(d) => add(p, d)} />
+              <Candidate key={p.key} place={p} days={days} editable={editable} busy={busy === p.key} onAdd={(d) => add(p, d)} vote={votes?.[p.key]} onVote={() => { void api.post(`/api/groups/${tripId}/votes`, { key: p.key }).then(onChanged).catch((e) => setError(e instanceof Error ? e.message : "Couldn't save your vote")); }} />
             ))}
           </ul>
         )}

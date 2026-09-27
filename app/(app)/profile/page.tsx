@@ -3,7 +3,7 @@
 import { useEffect, useState, type ComponentType } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, ChevronRight, Globe, Heart, IndianRupee, Mail, MapPin, Phone, Ruler, Users } from "lucide-react";
+import { Bell, ChevronRight, Crown, Globe, Heart, IndianRupee, Mail, MapPin, Phone, Ruler, Users } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { PageBody, PageHero } from "@/components/page";
 import { PACE_LABEL, Spinner, cx } from "@/components/ui";
@@ -18,6 +18,16 @@ const loadLocal = (): Settings => {
     return { alerts: true, email: false, lang: "English", units: "km" };
   }
 };
+
+interface MyGroupTrip {
+  id: string;
+  title: string;
+  destination: string;
+  status: string;
+  startDate: string;
+  role: "admin" | "member";
+  people: number;
+}
 
 interface ProfileResponse {
   user: User;
@@ -77,10 +87,14 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
 export default function ProfilePage() {
   const router = useRouter();
   const [data, setData] = useState<ProfileResponse | null>(null);
+  const [groups, setGroups] = useState<MyGroupTrip[]>([]);
+  const [joinCode, setJoinCode] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [s, setS] = useState<Settings>(() => (typeof window === "undefined" ? { alerts: true, email: false, lang: "English", units: "km" } : loadLocal()));
 
   useEffect(() => {
     api.get<ProfileResponse>("/api/profile").then(setData);
+    api.get<{ trips: MyGroupTrip[] }>("/api/groups").then((r) => setGroups(r.trips)).catch(() => {});
   }, []);
 
   const set = (k: keyof Settings, v: Settings[keyof Settings]) => {
@@ -90,6 +104,16 @@ export default function ProfilePage() {
       localStorage.setItem(KEY, JSON.stringify(n));
     } catch {
       /* ignore */
+    }
+  };
+
+  const join = async () => {
+    setJoinError(null);
+    try {
+      const r = await api.post<{ tripId: string }>("/api/groups/join", { code: joinCode.trim() });
+      router.push(`/plan?tripId=${r.tripId}`);
+    } catch (e) {
+      setJoinError(e instanceof Error ? e.message : "Couldn't join");
     }
   };
 
@@ -130,6 +154,35 @@ export default function ProfilePage() {
             <Row Icon={Phone} label="Phone" value={user.phoneNumber || "Not set"} />
             <Row Icon={Users} label="Travel group" value={`${data.travelersCount} traveler${data.travelersCount > 1 ? "s" : ""}`} to="/plan" />
           </Group>
+
+          <section>
+            <h2 className="mb-2 px-1 text-sm font-bold uppercase tracking-[0.12em] text-stone-500">Trips &amp; groups</h2>
+            <div className="overflow-hidden rounded-[1.6rem] bg-white shadow-soft">
+              {groups.length === 0 && <p className="px-4 py-4 text-[15px] text-stone-600">No trips yet. Plan one, or join a friend&apos;s with their code.</p>}
+              <ul className="divide-y divide-stone-100">
+                {groups.map((g) => (
+                  <li key={g.id}>
+                    <Link href={g.status === "active" ? "/trip" : `/plan?tripId=${g.id}`} className="flex min-h-16 items-center gap-3 px-4">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-rani-50 text-rani-600">{g.role === "admin" ? <Crown size={18} aria-hidden /> : <Users size={18} aria-hidden />}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[16px] font-semibold text-ink">{g.title}</span>
+                        <span className="block truncate text-sm text-stone-600">
+                          {g.role === "admin" ? "You're the admin" : "Member"} · {g.people} {g.people === 1 ? "person" : "people"}
+                        </span>
+                      </span>
+                      <ChevronRight size={18} className="text-stone-400" aria-hidden />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={(e) => { e.preventDefault(); if (joinCode.trim().length >= 4) void join(); }} className="flex gap-2 border-t border-stone-100 p-3">
+                <label className="sr-only" htmlFor="join-code">Invite code</label>
+                <input id="join-code" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="Join with an invite code" maxLength={20} className="min-h-12 min-w-0 flex-1 rounded-2xl border border-stone-200 bg-white px-4 text-[16px] text-ink placeholder:text-stone-400 outline-none focus:border-rani-500 focus:ring-2 focus:ring-rani-100" />
+                <button type="submit" disabled={joinCode.trim().length < 4} className="min-h-12 shrink-0 rounded-full bg-rani-600 px-5 font-bold text-white disabled:opacity-50">Join</button>
+              </form>
+              {joinError && <p role="alert" className="px-4 pb-3 text-sm font-medium text-red-700">{joinError}</p>}
+            </div>
+          </section>
 
           <Group title="Travel preferences">
             <Row Icon={Heart} label="Pace" value={PACE_LABEL[user.preferences?.preferredPace] || "Not set"} />

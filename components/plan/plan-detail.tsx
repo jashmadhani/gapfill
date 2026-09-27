@@ -12,23 +12,42 @@ import DayTimeline from "@/components/day-timeline";
 import RouteMap from "@/components/route-map";
 import LeftOut from "@/components/plan/left-out";
 import { GroupFairness } from "@/components/group";
+import GroupPanel, { type GroupData } from "@/components/group/group-panel";
 import type { PlanDocument, Trip } from "@/types";
 
 interface PlanResponse {
-  trips: { id: string; title: string; status: string; startDate: string; coverImageUrl?: string }[];
+  trips: { id: string; title: string; status: string; startDate: string; coverImageUrl?: string; role?: "admin" | "member" }[];
   trip: Trip | null;
   plan: PlanDocument | null;
+  role?: "admin" | "member";
 }
 
 export default function PlanDetail({ tripId }: { tripId: string }) {
   const router = useRouter();
   const [data, setData] = useState<PlanResponse | null>(null);
 
+  const [group, setGroup] = useState<GroupData | null>(null);
+  const [updated, setUpdated] = useState(false);
+
   const load = () => {
-    api.get<PlanResponse>(`/api/plan?tripId=${tripId}`).then(setData);
+    api.get<PlanResponse>(`/api/plan?tripId=${tripId}`).then((d) => {
+      // Someone else (the admin) changed the plan while this screen was open: say so.
+      setData((prev) => {
+        if (prev?.plan && d.plan && prev.plan.modifiedAt !== d.plan.modifiedAt) setUpdated(true);
+        return d;
+      });
+    });
+    api.get<GroupData>(`/api/groups/${tripId}`).then(setGroup).catch(() => {});
   };
   useEffect(() => {
     load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripId]);
+  // Everyone in the group sees the same plan: check for changes while the screen is visible.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 15000);
+    return () => clearInterval(t); // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId]);
 
   const remove = async (itemId: string) => {
@@ -51,6 +70,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
     );
   }
 
+  const isAdmin = data.role !== "member";
   const draft = trip.status === "planning";
   const errors = (plan?.conflicts ?? []).filter((c) => c.level === "error");
 
@@ -77,6 +97,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                 className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-semibold", t.id === trip._id ? "bg-ink text-white" : "bg-white text-stone-700 ring-1 ring-stone-200")}
               >
                 {t.title}
+                {t.role === "member" && <span className="ml-1.5 text-xs font-medium opacity-70">member</span>}
               </button>
             ))}
             <Link href="/plan?tab=plan" className="shrink-0 rounded-full bg-rani-50 px-4 py-2 text-sm font-semibold text-rani-700">
@@ -85,6 +106,16 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
           </div>
         )}
 
+        {!isAdmin && (
+          <p className="mb-4 rounded-2xl bg-rani-50 px-4 py-3 text-[15px] text-rani-800">
+            You&apos;re a member of this trip. You see the plan live, and you can suggest places and vote. Only the admin can change it.
+          </p>
+        )}
+        {updated && (
+          <button type="button" onClick={() => setUpdated(false)} className="mb-4 flex min-h-11 w-full items-center justify-between rounded-2xl bg-emerald-50 px-4 text-left text-[15px] font-semibold text-emerald-800">
+            The plan was just updated. <span className="text-sm font-medium underline">Dismiss</span>
+          </button>
+        )}
         <div className="lg:grid lg:grid-cols-[1fr_1.1fr] lg:items-start lg:gap-10 [&>*]:min-w-0">
           <section className="space-y-5 lg:sticky lg:top-24">
             {plan && plan.days.length > 0 && (
@@ -96,6 +127,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
               />
             )}
             <GroupFairness summary={plan?.fitSummary} />
+            {group && <GroupPanel tripId={trip._id} group={group} onChanged={load} />}
             {plan?.hotel && (
               <Card className="flex items-center gap-4 p-4">
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-ink text-white">
@@ -187,21 +219,21 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                   title={`Day ${i + 1}`}
                   dateLabel={fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "long", day: "numeric", month: "short" })}
                   cards={cards}
-                  editable={draft || trip.status === "upcoming"}
+                  editable={isAdmin && (draft || trip.status === "upcoming")}
                   onRemove={remove}
                 />
               ))}
               {(!plan || plan.days.length === 0) && <Empty title="Nothing planned yet">Add experiences from Discover to fill in your days.</Empty>}
             </div>
             {plan && plan.considered.length > 0 && (
-              <LeftOut tripId={trip._id} places={plan.considered} days={plan.days.length} editable={draft || trip.status === "upcoming"} onChanged={load} />
+              <LeftOut tripId={trip._id} places={plan.considered} days={plan.days.length} editable={isAdmin && (draft || trip.status === "upcoming")} onChanged={load} votes={group?.votes} />
             )}
           </section>
         </div>
       </PageBody>
 
       <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-5 pb-3 pt-4 lg:bottom-0 lg:mx-auto lg:max-w-md lg:bg-none">
-        {draft ? (
+        {!isAdmin ? null : draft ? (
           <Button className="w-full" disabled={errors.length > 0}>
             {errors.length ? `Fix ${errors.length} issue${errors.length > 1 ? "s" : ""} to book` : `Ready to book · ${inr(trip.totalBudget)}`}
           </Button>

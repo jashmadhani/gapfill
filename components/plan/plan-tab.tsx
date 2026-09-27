@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Send, Sparkles, X } from "lucide-react";
 import { api, fmtDate } from "@/lib/api-client";
 import { PageBody, SectionHead } from "@/components/page";
@@ -44,6 +44,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default function PlanTab({ initialDestination }: { initialDestination: string }) {
   const router = useRouter();
+  const fromTrip = useSearchParams().get("fromTrip");
   const [destination, setDestination] = useState(initialDestination);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -69,6 +70,17 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
   useEffect(() => {
     api.get<{ trips: TripChip[] }>("/api/plan").then((r) => setTrips(r.trips)).catch(() => {});
   }, []);
+
+  // "Re-plan for the whole group": start from the people who have joined, with the ages and needs they set themselves.
+  useEffect(() => {
+    if (!fromTrip) return;
+    api
+      .get<{ members: { name: string; age?: number; stepFree?: boolean }[] }>(`/api/groups/${fromTrip}`)
+      .then((g) => {
+        if (g.members.length) setTravellers(g.members.map((m) => ({ name: m.name, age: m.age ?? 30, stepFree: !!m.stepFree })));
+      })
+      .catch(() => {});
+  }, [fromTrip]);
 
   useEffect(() => {
     aiEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });

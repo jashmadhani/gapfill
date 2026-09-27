@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
+import { safeNext } from "@/lib/safe-next";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
@@ -37,7 +38,7 @@ function LoginForm() {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? "Couldn't log you in. Check your details and try again.");
       }
-      router.push("/discover");
+      router.push(safeNext(searchParams.get("next")));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -54,7 +55,7 @@ function LoginForm() {
       footer={
         <>
           New to Toure?{" "}
-          <Link href="/auth/register" className="font-semibold text-rani-600 hover:text-rani-700">
+          <Link href={searchParams.get("next") ? `/auth/register?next=${encodeURIComponent(safeNext(searchParams.get("next")))}` : "/auth/register"} className="font-semibold text-rani-600 hover:text-rani-700">
             Create an account
           </Link>
         </>
