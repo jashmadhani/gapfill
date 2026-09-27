@@ -67,6 +67,8 @@ export interface TripGroupMember {
   age?: number;
   stepFree?: boolean; // needs step-free access
   interests?: string[];
+  userId?: string; // set when this traveller is a real account that joined the trip
+  role?: "admin" | "member";
 }
 
 export interface TripGroup {
