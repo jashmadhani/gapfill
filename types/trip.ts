@@ -65,6 +65,8 @@ export interface TripRouteStop {
 export interface TripGroupMember {
   name: string;
   age?: number;
+  stepFree?: boolean; // needs step-free access
+  interests?: string[];
 }
 
 export interface TripGroup {

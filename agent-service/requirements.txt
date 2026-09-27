@@ -9,3 +9,6 @@ langchain-core>=0.3
 langchain-groq>=0.2
 langgraph>=0.2
 pytest>=8.0
+numpy>=2.0
+joblib>=1.4
+scikit-learn==1.9.1  # must match the version the bundled models in app/ml/models were trained with

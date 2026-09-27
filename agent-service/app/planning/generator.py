@@ -15,6 +15,7 @@ from .geo import centroid, haversine_km
 from .scoring import score_candidates
 from .sequencing import _typical_spend, build_day, select_hotel, simple_kmeans
 from .dwell import estimate_dwell_minutes
+from .fit import day_date, evaluate, normalise_members, summarise
 
 HOTEL_CATEGORY = "accommodation.hotel"
 POI_CATEGORIES = "tourism.sights,tourism.attraction,entertainment,catering.restaurant,catering.cafe,catering.bar,leisure.park"
@@ -70,7 +71,7 @@ def _nearest_unused(food: list[dict], anchor: dict, used: set[str]) -> dict | No
     return best
 
 
-async def generate_plan(client: NextClient, destination: str, start_date: str, end_date: str, budget: float, theme_tags: list[str], group_type: str = "solo") -> dict:
+async def generate_plan(client: NextClient, destination: str, start_date: str, end_date: str, budget: float, theme_tags: list[str], group_type: str = "solo", members: list[dict] | None = None) -> dict:
     try:
         center = await client.get("/api/places/geocode", {"q": destination})
     except Exception as exc:
@@ -99,14 +100,20 @@ async def generate_plan(client: NextClient, destination: str, start_date: str, e
     excluded: list[tuple[dict, str]] = []
     if catalog:
         weekdays = trip_weekdays(start_date, num_days)
+        travellers = normalise_members(members, group_type, theme_tags)
+        first_day = day_date(start_date, 0)
         eligible: list[dict] = []
         for raw in catalog["pois"]:
             place = to_place(raw)
             why = excluded_reason(place, group_type=group_type, budget=budget, weekdays=weekdays)
+            fit = evaluate(travellers, place, on=first_day, start_min=int(place["prefHour"] * 60), theme_tags=theme_tags)
+            vetoed = [m for m in fit["members"] if m["veto"]]
+            if not why and vetoed:
+                why = "Not suitable for " + ", ".join(f"{m['name']} ({m['veto']})" for m in vetoed[:2])
             if why:
-                excluded.append((place, why))
+                excluded.append(({**place, "memberFits": fit["members"], "groupFit": fit["group"], "crowd": fit["crowd"]}, why))
             else:
-                eligible.append(score_catalog_place(place, theme_tags, center))
+                eligible.append(score_catalog_place(place, theme_tags, center, fit))
         activities = sorted(eligible, key=lambda p: p["score"], reverse=True)
         for p in activities[:slots]:
             p["fitReason"] = fit_reason(p, theme_tags)
@@ -152,7 +159,11 @@ async def generate_plan(client: NextClient, destination: str, start_date: str, e
         considered = _considered_from_live(activities, top_activities, slots, theme_tags)
         total_seen = len(places)
 
+    fit_summary = summarise(travellers, [c for day in days for c in day]) if catalog else None
+
     return {
+        "members": travellers if catalog else [],
+        "fitSummary": fit_summary,
         "days": days,
         "hotel": hotel,
         "totalCost": total_cost,

@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { TripModel } from "@/lib/models/trip.model";
 import { PlanModel } from "@/lib/models/plan.model";
-import type { ConsideredPlace, EventCard, GroupType, PlanConflict, PlanHotel } from "@/types";
+import type { ConsideredPlace, FitSummary, EventCard, GroupType, PlanConflict, PlanHotel } from "@/types";
 
 interface CreatePlanBody {
   destination: string;
@@ -20,6 +20,8 @@ interface CreatePlanBody {
   notes: string[];
   conflicts: PlanConflict[];
   considered?: ConsideredPlace[];
+  members?: { name: string; age: number; step_free?: boolean; interests?: string[] }[];
+  fitSummary?: FitSummary | null;
 }
 
 /** Called by agent-service once its planning pipeline (geo/dwell/scoring/
@@ -49,7 +51,11 @@ export async function POST(req: NextRequest) {
     startDate: body.startDate,
     endDate: body.endDate,
     groupType: body.groupType || "solo",
-    group: { adults: 1, children: 0, members: [] },
+    group: {
+      adults: body.members?.length ? body.members.filter((m) => m.age >= 18).length : 1,
+      children: body.members?.length ? body.members.filter((m) => m.age < 18).length : 0,
+      members: (body.members ?? []).map((m) => ({ name: m.name, age: m.age, stepFree: !!m.step_free, interests: m.interests ?? [] })),
+    },
     themeTags: body.themeTags || [],
     totalBudget: body.budget || 0,
     totalSpent: 0,
@@ -76,6 +82,7 @@ export async function POST(req: NextRequest) {
     conflicts: body.conflicts || [],
     notes: body.notes || [],
     considered: body.considered || [],
+    fitSummary: body.fitSummary ?? undefined,
   });
 
   return NextResponse.json({ tripId: trip._id.toString(), planId: plan.planId, title: trip.title }, { status: 201 });

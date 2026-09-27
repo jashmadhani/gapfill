@@ -133,7 +133,8 @@ def build_day(day_index: int, date_str: str, places: list[dict], start_hour: int
                 cursor, dwell["typical"], {"lat": place["lat"], "lng": place["lng"]},
                 place["spend"] if place.get("spend") is not None else _typical_spend(place.get("categories", [])),
                 place.get("fitReason"),
-                {k: v for k, v in (("poiId", place.get("poiId")), ("photoRef", place.get("imageUrl"))) if v},
+                {k: v for k, v in (("poiId", place.get("poiId")), ("photoRef", place.get("imageUrl")), ("memberFits", place.get("memberFits")),
+                                   ("groupFit", place.get("groupFit")), ("crowd", place.get("crowd")), ("rating", place.get("rating"))) if v not in (None, "", 0, [])},
             )
         )
         cursor += timedelta(minutes=dwell["typical"])

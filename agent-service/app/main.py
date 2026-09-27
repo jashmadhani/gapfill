@@ -52,6 +52,8 @@ class PlanGenerateRequest(BaseModel):
     currency: str = "INR"
     groupType: str = "solo"
     themeTags: list[str] = Field(default_factory=list)
+    # Who is travelling: [{name, age, stepFree?, interests?}]. Optional; sensible defaults come from groupType.
+    members: list[dict] = Field(default_factory=list)
 
 
 class PlanCreatedResponse(BaseModel):
@@ -60,8 +62,8 @@ class PlanCreatedResponse(BaseModel):
     title: str
 
 
-async def _run_and_persist(client: NextClient, destination: str, start_date: str, end_date: str, budget: float, currency: str, group_type: str, theme_tags: list[str]) -> dict:
-    generated = await generate_plan(client, destination, start_date, end_date, budget, theme_tags, group_type)
+async def _run_and_persist(client: NextClient, destination: str, start_date: str, end_date: str, budget: float, currency: str, group_type: str, theme_tags: list[str], members: list[dict] | None = None) -> dict:
+    generated = await generate_plan(client, destination, start_date, end_date, budget, theme_tags, group_type, members)
     return await client.post(
         "/api/agent/plan/create",
         {
@@ -85,7 +87,7 @@ async def plan_generate(body: PlanGenerateRequest, authorization: str | None = H
     verify_token(token)
     client = NextClient(settings.next_internal_base_url, token)
     try:
-        created = await _run_and_persist(client, body.destination, body.startDate, body.endDate, body.budget, body.currency, body.groupType, body.themeTags)
+        created = await _run_and_persist(client, body.destination, body.startDate, body.endDate, body.budget, body.currency, body.groupType, body.themeTags, body.members)
     except PlanGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return PlanCreatedResponse(**created)

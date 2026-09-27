@@ -49,6 +49,22 @@ def to_place(p: dict) -> dict:
         "minAge": attrs.get("minAge") or 0,
         "prefHour": _pref_hour(attrs),
         "address": None,
+        "ml": _ml_place(p, attrs),
+    }
+
+
+_IO = {"indoor": 1.0, "mixed": 0.5, "outdoor": 0.0}
+
+
+def _ml_place(p: dict, attrs: dict) -> dict:
+    """The place as the satisfaction/crowd models expect it (see app/ml/features.py)."""
+    return {
+        "id": p["poiId"], "category": attrs.get("category") or p.get("category") or "heritage", "tags": p.get("tags") or [],
+        "intensity": attrs.get("intensity", 2), "stairs": attrs.get("stairs", 0.3), "walk_km": attrs.get("walkKm", 1.5),
+        "seating": attrs.get("seating", 0.3), "shade": attrs.get("shade", 0.3), "indoor": _IO.get(p.get("indoorOutdoor"), 0.5),
+        "duration_min": p.get("durationMin") or 90, "rating": p.get("rating") or 4.3, "popularity": attrs.get("popularity", 0.1),
+        "kid_friendly": bool(attrs.get("kidFriendly", True)), "min_age": attrs.get("minAge") or 0, "price": p.get("price") or 0,
+        "best_time": attrs.get("bestTime") or "all",
     }
 
 
@@ -77,14 +93,21 @@ def excluded_reason(p: dict, *, group_type: str, budget: float, weekdays: list[i
     return None
 
 
-def score_catalog_place(p: dict, theme_tags: list[str], center: dict) -> dict:
+def score_catalog_place(p: dict, theme_tags: list[str], center: dict, fit: dict | None = None) -> dict:
+    """`fit` is fit.evaluate(...) for this place. With it, the models' group fit is a quarter of the score;
+    without it (no traveller details) the score is interests, quality and distance only."""
     distance_km = haversine_km(center["lat"], center["lng"], p["lat"], p["lng"])
     distance_score = max(0.0, 1.0 - distance_km / 15.0)
     hits = len(set(p["tags"]) & set(theme_tags))
     relevance = 0.5 if not theme_tags else min(1.0, 0.25 + 0.4 * hits)
     quality = max(0.0, min(1.0, (p["rating"] - 3.5) / 1.5)) * 0.7 + min(1.0, p["ratingCount"] / 800) * 0.3
-    score = relevance * 0.5 + quality * 0.3 + distance_score * 0.2
-    return {**p, "score": round(score, 4), "relevance": relevance, "themeHits": hits, "distanceKm": round(distance_km, 1), "is_food": False}
+    if fit:
+        score = relevance * 0.35 + quality * 0.2 + distance_score * 0.15 + fit["group"] / 100 * 0.3
+        extra = {"memberFits": fit["members"], "groupFit": fit["group"], "crowd": fit["crowd"]}
+    else:
+        score = relevance * 0.5 + quality * 0.3 + distance_score * 0.2
+        extra = {}
+    return {**p, **extra, "score": round(score, 4), "relevance": relevance, "themeHits": hits, "distanceKm": round(distance_km, 1), "is_food": False}
 
 
 def fit_reason(p: dict, theme_tags: list[str]) -> str:
@@ -112,6 +135,14 @@ def explain_left_out(p: dict, *, rank: int, slots: int, theme_tags: list[str], s
     twin = next((s for s in selected if s.get("activityType") == p.get("activityType") and haversine_km(s["lat"], s["lng"], p["lat"], p["lng"]) < 1.2), None)
     if twin:
         reasons.append(f"Close to and similar to {twin['name']}, which is already in your plan")
+    group = p.get("groupFit")
+    picked_fits = [x["groupFit"] for x in selected if x.get("groupFit") is not None]
+    if group is not None and picked_fits:
+        avg = round(sum(picked_fits) / len(picked_fits))
+        if avg - group >= 8:
+            weakest = min((m for m in p.get("memberFits", []) if not m.get("veto")), key=lambda m: m["fit"], default=None)
+            held = f"; weakest for {weakest['name']} ({weakest['fit']}%)" + (f", {weakest['reasons'][0]}" if weakest.get("reasons") else "") if weakest else ""
+            reasons.insert(0, f"Lower group fit: {group}% vs {avg}% average for your picks{held}")
     if len(reasons) < MAX_REASONS:
         reasons.append(f"Ranked #{rank}; your days have room for {slots} stops")
     return reasons[:MAX_REASONS]
@@ -145,6 +176,9 @@ def _entry(p: dict, rank: int | None, reasons: list[str], verdict: str) -> dict:
         "location": {"lat": p["lat"], "lng": p["lng"]},
         "distanceKm": p.get("distanceKm"),
         "score": p.get("score"),
+        "memberFits": p.get("memberFits"),
+        "groupFit": p.get("groupFit"),
+        "crowd": p.get("crowd"),
         "rank": rank,
         "verdict": verdict,
         "reasons": reasons,

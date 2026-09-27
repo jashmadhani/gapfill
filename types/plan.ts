@@ -24,6 +24,10 @@ export interface EventCard {
   fitReason?: string; // why the planner chose this, shown in UI
   accessibilityIcons: string[];
   scoreBreakdown?: Record<string, number>;
+  memberFits?: MemberFit[]; // predicted fit per traveller for this stop
+  groupFit?: number; // 0-100, weighted toward the least-happy traveller
+  crowd?: number; // 0-100 forecast busyness at the planned time
+  rating?: number;
   photoRef?: string;
 
   /** The idle window this card was placed into, so a replan/disruption
@@ -65,6 +69,22 @@ export interface PlanHotel {
   source: "geoapify" | "seed" | "manual";
 }
 
+/** One traveller's predicted enjoyment of one place, from the satisfaction model. */
+export interface MemberFit {
+  name: string;
+  age: number;
+  band: string; // "Adult", "Child", "Senior", ...
+  fit: number; // 0-100
+  veto?: string | null; // hard safety/access reason this place is not for them
+  reasons?: string[]; // what holds their score back
+  positive?: string | null;
+}
+
+export interface FitSummary {
+  fairness: number; // the least-happy traveller's average fit across the plan
+  members: { name: string; age: number; band: string; stepFree?: boolean; avg: number; highlights: string[] }[];
+}
+
 /** A candidate the planner looked at but did not put in the itinerary. Kept on the plan so the
  * traveller can see what was passed over, what it costs, and why - and swap it in. */
 export interface ConsideredPlace {
@@ -81,6 +101,9 @@ export interface ConsideredPlace {
   location: GeoPoint;
   distanceKm?: number | null;
   score?: number | null;
+  memberFits?: MemberFit[] | null;
+  groupFit?: number | null;
+  crowd?: number | null;
   rank?: number | null; // position among eligible candidates, null when excluded outright
   verdict: "left_out" | "excluded";
   reasons: string[];
@@ -119,6 +142,7 @@ export interface PlanDocument {
   conflicts: PlanConflict[];
   notes: string[]; // "how we optimised this" bullets shown under the price card
   considered: ConsideredPlace[]; // candidates left out of this version, each with its reasons
+  fitSummary?: FitSummary; // how the whole plan works for each traveller (from the satisfaction model)
 
   createdAt: ISODateTime;
   /** When this exact version's content was last mutated in place (should be

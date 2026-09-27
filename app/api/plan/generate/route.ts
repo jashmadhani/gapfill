@@ -12,6 +12,10 @@ const bodySchema = z.object({
   budget: z.number().nonnegative().default(0),
   groupType: z.enum(["solo", "couple", "family", "large_group"]).default("solo"),
   themeTags: z.array(z.string()).default([]),
+  members: z
+    .array(z.object({ name: z.string().trim().min(1).max(40), age: z.number().int().min(0).max(110), stepFree: z.boolean().optional() }))
+    .max(12)
+    .default([]),
 });
 
 /** The Plan tab's form path: structured params in, a generated trip out.
