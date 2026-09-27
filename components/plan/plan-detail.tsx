@@ -238,7 +238,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
       </PageBody>
 
       <div className="sticky bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 mt-4 bg-gradient-to-t from-sand-50 via-sand-50 to-transparent px-5 pb-3 pt-4 lg:bottom-0 lg:mx-auto lg:max-w-md lg:bg-none">
-        {!isAdmin ? null : draft ? (
+        {!isAdmin || (payments?.intents.length ?? 0) > 0 ? null : draft ? (
           <div className="space-y-1.5">
             <Button
               className="w-full"
