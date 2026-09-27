@@ -33,7 +33,7 @@ export interface ChatMessage {
  * shows up in the same chat-history menu, but the UI marks it read-only once
  * `planTripId` is set, since the conversation's job (producing that plan) is
  * finished at that point. */
-export type ChatSessionTag = "normal" | "plan";
+export type ChatSessionTag = "normal" | "plan" | "booking";
 
 /** One conversation thread, listed in the Ask tab's chat-history menu. A
  * user can hold many; each is a fully independent context window sent to

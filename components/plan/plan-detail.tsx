@@ -14,6 +14,7 @@ import LeftOut from "@/components/plan/left-out";
 import { GroupFairness } from "@/components/group";
 import GroupPanel, { type GroupData } from "@/components/group/group-panel";
 import ApprovalCard, { type PaymentsData } from "@/components/plan/approval-card";
+import PendingChanges, { type PendingChange } from "@/components/plan/pending-changes";
 import type { PlanDocument, Trip } from "@/types";
 
 interface PlanResponse {
@@ -30,6 +31,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
   const [group, setGroup] = useState<GroupData | null>(null);
   const [payments, setPayments] = useState<PaymentsData | null>(null);
   const [bookError, setBookError] = useState<string | null>(null);
+  const [changes, setChanges] = useState<PendingChange[]>([]);
   const [updated, setUpdated] = useState(false);
 
   const load = () => {
@@ -42,6 +44,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
     });
     api.get<GroupData>(`/api/groups/${tripId}`).then(setGroup).catch(() => {});
     api.get<PaymentsData>(`/api/payments?tripId=${tripId}`).then(setPayments).catch(() => {});
+    api.get<{ changes: PendingChange[] }>(`/api/disruptions?tripId=${tripId}`).then((r) => setChanges(r.changes)).catch(() => {});
   };
   useEffect(() => {
     load(); // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,6 +133,7 @@ export default function PlanDetail({ tripId }: { tripId: string }) {
                 dayLabels={plan.days.map((_, i) => fmtDate(new Date(new Date(trip.startDate).getTime() + i * 86400000).toISOString(), { weekday: "short", day: "numeric" }))}
               />
             )}
+            <PendingChanges tripId={trip._id} changes={changes} isAdmin={isAdmin} onChanged={load} />
             {payments && <ApprovalCard data={payments} onChanged={load} />}
             <GroupFairness summary={plan?.fitSummary} />
             {group && <GroupPanel tripId={trip._id} group={group} onChanged={load} />}

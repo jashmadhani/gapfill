@@ -80,13 +80,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
   }
 
+  // A "booking" session routes to the Gemini booking & ticketing agent (falls back to rules without a
+  // GEMINI_API_KEY); every other session uses the general trip assistant.
+  const endpoint = session.tag === "booking" ? "/booking/chat" : "/chat";
   let agentReply;
   try {
-    const res = await fetch(`${AGENT_SERVICE_URL}/chat`, {
+    const res = await fetch(`${AGENT_SERVICE_URL}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(request),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(45000),
     });
     if (!res.ok) throw new Error(`Agent service returned ${res.status}`);
     agentReply = agentChatResponseSchema.parse(await res.json());

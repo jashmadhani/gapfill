@@ -28,13 +28,13 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
   const body = (await req.json().catch(() => ({}))) as { tag?: ChatSessionTag };
-  const tag: ChatSessionTag = body.tag === "plan" ? "plan" : "normal";
+  const tag: ChatSessionTag = body.tag === "plan" ? "plan" : body.tag === "booking" ? "booking" : "normal";
 
   await connectToDatabase();
   const session = await ChatSessionModel.create({
     sessionId: `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     userId: user._id,
-    title: tag === "plan" ? "Plan a trip" : "New chat",
+    title: tag === "plan" ? "Plan a trip" : tag === "booking" ? "Book & tickets" : "New chat",
     tag,
     messages: [],
   });

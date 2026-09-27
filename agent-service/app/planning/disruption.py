@@ -98,30 +98,35 @@ def _swap_change(stop, place, reason):
 
 # ---------------------------------------------------------------- analyses (pure)
 def analyse_weather(d: Day) -> dict | None:
-    affected = [s for s in d.stops() if s["place"].get("indoorOutdoor") == "outdoor"]
+    all_stops = d.stops()
+    affected_ids = {s["card"]["itemId"] for s in all_stops if s["place"].get("indoorOutdoor") == "outdoor"}
+    affected = [s for s in all_stops if s["card"]["itemId"] in affected_ids]
     if not affected:
         return None
-    dry = {id(s): d.fit(s["place"], s["start"], rain=False)["group"] for s in affected}
-    wet = {id(s): d.fit(s["place"], s["start"])["group"] for s in affected}
+    unaffected = [s for s in all_stops if s["card"]["itemId"] not in affected_ids]
+    dry_unaffected = [d.fit(s["place"], s["start"], rain=False)["group"] for s in unaffected]
+    wet_all = [d.fit(s["place"], s["start"])["group"] for s in all_stops]
     swaps, used = [], set()
     for s in affected:
         hit = d.best_swap(s, used, want=lambda p: p.get("indoorOutdoor") in ("indoor", "mixed"))
         if hit:
             used.add(hit[0]["poiId"])
             swaps.append((s, hit))
+    swapped_ids = {s["card"]["itemId"] for s, _ in swaps}
     options = []
     if swaps:
+        wet_left = [d.fit(s["place"], s["start"])["group"] for s in affected if s["card"]["itemId"] not in swapped_ids]
         options.append(_option("A", "Swap outdoor stops for indoor ones",
                                "; ".join(f"{s['card']['title']} -> {p['name']} ({f['group']}% fit)" for s, (p, f) in swaps),
                                [_swap_change(s, p, "Indoor alternative for rain") for s, (p, f) in swaps],
-                               fit=_avg([f["group"] for _, (_, f) in swaps] + [wet[id(s)] for s in affected if s not in [x for x, _ in swaps]]),
+                               fit=_avg([f["group"] for _, (_, f) in swaps] + wet_left),
                                cost=sum(p["price"] - (s["card"].get("price") or 0) for s, (p, _) in swaps), lost_min=0))
     options.append(_option("B" if swaps else "A", "Skip the outdoor stops", "A lighter day: " + ", ".join(s["card"]["title"] for s in affected),
                            [{"op": "remove", "itemId": s["card"]["itemId"], "from": s["card"]["title"], "reason": "Skipped for rain"} for s in affected],
-                           fit=_avg([dry[id(s)] for s in d.stops() if s not in affected]) if len(affected) < len(d.stops()) else 50,
+                           fit=_avg(dry_unaffected) if unaffected else 50,
                            cost=-sum(s["card"].get("price") or 0 for s in affected), lost_min=sum(s["place"]["dwellMin"] for s in affected)))
     options.append(_option(chr(ord(options[-1]["key"]) + 1), "Keep the plan", "Go ahead in the rain",
-                           [], fit=_avg(list(wet.values())), cost=0, lost_min=0))
+                           [], fit=_avg(wet_all), cost=0, lost_min=0))
     return {"kind": "weather", "reason": f"Rain expected on this day: {len(affected)} outdoor stop{'s' if len(affected) > 1 else ''} affected",
             "impact": [s["card"]["title"] for s in affected], "options": score_and_mark(options)}
 
