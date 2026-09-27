@@ -30,6 +30,9 @@
         ],
         "additionalProperties": false
       }
+    },
+    "tripId": {
+      "type": "string"
     }
   },
   "required": [

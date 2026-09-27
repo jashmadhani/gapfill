@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { connectToDatabase } from "@/lib/db/mongoose";
 import { resolveCurrentTrip } from "@/lib/trip-helpers";
+import { accessFor } from "@/lib/group";
+
+async function accessTrip(id: string, userId: string) {
+  return (await accessFor(id, userId))?.trip ?? null;
+}
 import { OPEN, tripTotal } from "@/lib/payments";
 import { getActivePlanForTrip } from "@/lib/trip-helpers";
 import { PaymentIntentModel } from "@/lib/models/payment-intent.model";
@@ -13,7 +18,8 @@ export async function GET(req: NextRequest) {
   const user = await requireUser(req);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   await connectToDatabase();
-  const trip = await resolveCurrentTrip(user._id.toString());
+  const explicit = req.nextUrl.searchParams.get("trip");
+  const trip = explicit && explicit !== "current" ? await accessTrip(explicit, user._id.toString()) : await resolveCurrentTrip(user._id.toString());
   if (!trip) return NextResponse.json({ error: "No trip" }, { status: 404 });
   const plan = await getActivePlanForTrip(trip._id.toString());
   const isAdmin = trip.userId.toString() === user._id.toString();

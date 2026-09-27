@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { MessageCircle, Send, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Spinner, cx } from "@/components/ui";
+import ChatMarkdown from "@/components/chat-markdown";
 import type { ChatMessage } from "@/types";
 
 const storageKey = (tripId: string) => `plan-chat:${tripId}`;
@@ -46,7 +47,9 @@ export default function FloatingChat({ tripId, tripTitle }: { tripId: string; tr
             return;
           }
         }
-        const created = await api.post<{ id: string }>("/api/chat/sessions", { tag: "normal" });
+        // Bound server-side, not just hinted via context: every "current trip" lookup the assistant makes in this
+        // session resolves to this trip, not whichever trip happens to be active/upcoming account-wide.
+        const created = await api.post<{ id: string }>("/api/chat/sessions", { tag: "normal", tripId });
         try {
           localStorage.setItem(storageKey(tripId), created.id);
         } catch {
@@ -97,7 +100,7 @@ export default function FloatingChat({ tripId, tripTitle }: { tripId: string; tr
             {!loading && messages.length === 0 && <p className="text-sm text-stone-500">Ask about your plan, or tell me what to change.</p>}
             {messages.map((m, i) => (
               <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                <div className={cx("max-w-[85%] whitespace-pre-line rounded-2xl px-3.5 py-2 text-[15px] leading-snug", m.role === "user" ? "rounded-br-md bg-rani-600 text-white" : "rounded-bl-md bg-stone-100 text-stone-800")}>{m.content}</div>
+                <div className={cx("max-w-[85%] whitespace-pre-line rounded-2xl px-3.5 py-2 text-[15px] leading-snug", m.role === "user" ? "rounded-br-md bg-rani-600 text-white" : "rounded-bl-md bg-stone-100 text-stone-800")}>{m.role === "user" ? m.content : <ChatMarkdown text={m.content} />}</div>
               </div>
             ))}
             {busy && <div className="w-fit rounded-2xl rounded-bl-md bg-stone-100 px-3 py-2 text-stone-400">...</div>}

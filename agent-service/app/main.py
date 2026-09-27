@@ -31,7 +31,7 @@ async def chat(body: AgentChatRequest, authorization: str | None = Header(defaul
     # - it has to be a token this exact secret actually signed, unexpired.
     verify_token(token)
 
-    agent = build_agent(token=token)
+    agent = build_agent(token=token, trip_id=body.tripId)
     messages = [{"role": turn.role, "content": turn.content} for turn in body.history]
     messages.append({"role": "user", "content": redact(body.message)[0]})
 
@@ -220,13 +220,14 @@ from . import booking_agent  # noqa: E402
 class BookingChatRequest(BaseModel):
     message: str
     history: list[ChatTurn] = Field(default_factory=list)
+    tripId: Optional[str] = None
 
 
 @app.post("/booking/chat")
 async def booking_chat(body: BookingChatRequest, authorization: str | None = Header(default=None)) -> dict:
     token = _extract_token(authorization)
     verify_token(token)
-    client = NextClient(settings.next_internal_base_url, token)
+    client = NextClient(settings.next_internal_base_url, token, trip_id=body.tripId)
     history = [{"role": t.role, "content": t.content} for t in body.history]
     return await booking_agent.chat(client, history, body.message)
 

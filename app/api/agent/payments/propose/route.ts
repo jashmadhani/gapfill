@@ -9,10 +9,10 @@ import { GateError, propose } from "@/lib/payments";
 export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  const parsed = z.object({ kind: z.enum(["booking", "balance", "change"]).default("booking"), pay: z.enum(["deposit", "full"]).default("deposit"), changeId: z.string().optional(), option: z.string().max(2).optional() }).safeParse(await req.json().catch(() => null));
+  const parsed = z.object({ kind: z.enum(["booking", "balance", "change"]).default("booking"), pay: z.enum(["deposit", "full"]).default("deposit"), changeId: z.string().optional(), option: z.string().max(2).optional(), tripId: z.string().optional() }).safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   await connectToDatabase();
-  const trip = await resolveCurrentTrip(user._id.toString());
+  const trip = parsed.data.tripId ? await (await import("@/lib/group")).accessFor(parsed.data.tripId, user._id.toString()).then((a) => a?.trip ?? null) : await resolveCurrentTrip(user._id.toString());
   if (!trip) return NextResponse.json({ error: "No trip" }, { status: 404 });
   try {
     const change = parsed.data.kind === "change" && parsed.data.changeId && parsed.data.option ? { eventId: parsed.data.changeId, optionKey: parsed.data.option } : undefined;

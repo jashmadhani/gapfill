@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock, Menu, MessageSquarePlus, Plus, Send, Sparkles, Trash2, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Button, Spinner, cx } from "@/components/ui";
+import ChatMarkdown from "@/components/chat-markdown";
 import type { ChatMessage, NavigateTarget } from "@/types";
 
 const SUGGEST = [
@@ -27,7 +28,14 @@ interface SessionDetail {
   id: string;
   title: string;
   readOnly?: boolean;
+  boundTripId?: string;
   messages: ChatMessage[];
+}
+
+interface MyTrip {
+  id: string;
+  title: string;
+  role: "admin" | "member";
 }
 
 function Logo() {
@@ -109,7 +117,18 @@ export default function AskPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [myTrips, setMyTrips] = useState<MyTrip[]>([]);
   const end = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.get<{ trips: MyTrip[] }>("/api/groups").then((r) => setMyTrips(r.trips)).catch(() => {});
+  }, []);
+
+  const bindTrip = async (tripId: string) => {
+    if (!active) return;
+    const r = await api.patch<{ boundTripId: string | null }>("/api/chat/sessions", { id: active.id, tripId: tripId || null });
+    setActive((a) => (a ? { ...a, boundTripId: r.boundTripId ?? undefined } : a));
+  };
 
   const loadSessions = async () => {
     const r = await api.get<{ sessions: SessionSummary[] }>("/api/chat/sessions");
@@ -194,6 +213,27 @@ export default function AskPage() {
         </button>
       </header>
 
+      {myTrips.length > 0 && (
+        <div className="shrink-0 px-5 pb-2 lg:px-8">
+          <label className="sr-only" htmlFor="chat-trip">Which trip this chat is about</label>
+          <select
+            id="chat-trip"
+            value={active.boundTripId ?? ""}
+            onChange={(e) => bindTrip(e.target.value)}
+            className="min-h-9 max-w-full rounded-full bg-stone-100 px-3.5 text-sm font-semibold text-stone-700"
+            title="Which trip this chat acts on - it reads and changes this one, not whichever trip happens to be current"
+          >
+            <option value="">Whichever trip is current</option>
+            {myTrips.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+                {t.role === "member" ? " (member)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {empty ? (
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="px-5 pt-6 lg:mx-auto lg:w-full lg:max-w-2xl lg:px-0">
@@ -228,7 +268,7 @@ export default function AskPage() {
                     m.role === "user" ? "rounded-br-md bg-rani-600 text-white" : "rounded-bl-md bg-stone-100 text-stone-800"
                   )}
                 >
-                  {m.content}
+                  {m.role === "user" ? m.content : <ChatMarkdown text={m.content} />}
                   {m.navigate && <span className="mt-1 block text-xs opacity-70">Opening {m.navigate.target}…</span>}
                 </div>
               </div>

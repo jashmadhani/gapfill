@@ -7,6 +7,9 @@ export interface ChatSessionDoc {
   title: string;
   tag: ChatSessionTag;
   planTripId?: mongoose.Types.ObjectId;
+  /** Which trip this chat acts on. Set when opened from a trip's own page, or picked in the chat header;
+   * every booking/mood/disruption tool call in this session resolves "current trip" to this one. */
+  boundTripId?: mongoose.Types.ObjectId;
   messages: ChatMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -21,6 +24,7 @@ const ChatSessionSchema = new Schema<Record<string, unknown>>(
     title: { type: String, default: "New chat" },
     tag: { type: String, enum: ["normal", "plan", "booking"], default: "normal" },
     planTripId: { type: Schema.Types.ObjectId, ref: "Trip" },
+    boundTripId: { type: Schema.Types.ObjectId, ref: "Trip" },
     messages: { type: [Schema.Types.Mixed], default: [] },
   },
   { timestamps: true }

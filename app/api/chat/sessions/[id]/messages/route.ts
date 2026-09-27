@@ -43,6 +43,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const token = await mintAgentServiceToken(user._id.toString());
   const request = agentChatRequestSchema.parse({
     message: text.trim(),
+    // Every "current trip" lookup the agent makes (get_trip, get_payments, propose_booking, mood_check_in,
+    // report_weather, ...) resolves to this trip when the session is bound to one, instead of falling back to
+    // whichever trip is active/upcoming/most-recently-touched account-wide - the mismatch that made booking or
+    // disruption actions from chat land on the wrong trip for anyone holding more than one.
+    tripId: session.boundTripId?.toString(),
     history: [
       // Ephemeral steering for the agent only (e.g. "this chat is about trip X") - not persisted to the session.
       ...(context?.trim() ? [{ role: "system" as const, content: context.trim().slice(0, 500) }] : []),

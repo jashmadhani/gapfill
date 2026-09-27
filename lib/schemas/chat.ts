@@ -44,6 +44,7 @@ export const toolCallLogSchema = z.object({
 export const agentChatRequestSchema = z.object({
   message: z.string(),
   history: z.array(chatTurnSchema).default([]),
+  tripId: z.string().optional(),
 });
 
 export const agentChatResponseSchema = z.object({

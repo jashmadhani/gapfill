@@ -28,6 +28,7 @@ class ChatTurn(BaseModel):
 class AgentChatRequest(BaseModel):
     message: str
     history: list[ChatTurn] = Field(default_factory=list)
+    tripId: Optional[str] = None
 
 
 class NavigateAction(BaseModel):

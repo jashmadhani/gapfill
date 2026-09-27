@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       title: s.title,
       tag: s.tag ?? "normal",
       readOnly: s.tag === "plan" && !!s.planTripId,
+      boundTripId: s.boundTripId?.toString(),
       updatedAt: s.updatedAt,
       lastMessage: s.messages.at(-1)?.content ?? "",
     })),
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
   const user = await requireUser(req);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-  const body = (await req.json().catch(() => ({}))) as { tag?: ChatSessionTag };
+  const body = (await req.json().catch(() => ({}))) as { tag?: ChatSessionTag; tripId?: string };
   const tag: ChatSessionTag = body.tag === "plan" ? "plan" : body.tag === "booking" ? "booking" : "normal";
 
   await connectToDatabase();
@@ -36,8 +37,22 @@ export async function POST(req: NextRequest) {
     userId: user._id,
     title: tag === "plan" ? "Plan a trip" : tag === "booking" ? "Book & tickets" : "New chat",
     tag,
+    boundTripId: body.tripId || undefined,
     messages: [],
   });
 
-  return NextResponse.json({ id: session.sessionId, title: session.title, tag: session.tag }, { status: 201 });
+  return NextResponse.json({ id: session.sessionId, title: session.title, tag: session.tag, boundTripId: session.boundTripId?.toString() }, { status: 201 });
+}
+
+export async function PATCH(req: NextRequest) {
+  const user = await requireUser(req);
+  if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  const body = (await req.json().catch(() => ({}))) as { id?: string; tripId?: string | null };
+  if (!body.id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+  await connectToDatabase();
+  const session = await ChatSessionModel.findOne({ sessionId: body.id, userId: user._id });
+  if (!session) return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  session.boundTripId = body.tripId ? (body.tripId as unknown as typeof session.boundTripId) : undefined;
+  await session.save();
+  return NextResponse.json({ id: session.sessionId, boundTripId: session.boundTripId ? session.boundTripId.toString() : null });
 }

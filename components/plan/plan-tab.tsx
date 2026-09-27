@@ -7,6 +7,7 @@ import { Plus, Send, Sparkles, X } from "lucide-react";
 import { api, fmtDate } from "@/lib/api-client";
 import { PageBody, SectionHead } from "@/components/page";
 import { Button, Card, INTEREST, Segmented, Spinner, TOP_INTERESTS, cx } from "@/components/ui";
+import ChatMarkdown from "@/components/chat-markdown";
 import type { ChatMessage, GroupType } from "@/types";
 
 const fieldClass = "min-h-12 rounded-2xl border border-stone-200 bg-white px-4 text-[16px] text-ink placeholder:text-stone-400 outline-none focus:border-rani-500 focus:ring-2 focus:ring-rani-100";
@@ -41,13 +42,16 @@ interface TripChip {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+// A blank type="date" input shows no placeholder text on iOS Safari - it just looks empty/broken. Default to a
+// week out for 3 nights so the field always has a value to show, rather than looking unset.
 
 export default function PlanTab({ initialDestination }: { initialDestination: string }) {
   const router = useRouter();
   const fromTrip = useSearchParams().get("fromTrip");
   const [destination, setDestination] = useState(initialDestination);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => addDays(7));
+  const [endDate, setEndDate] = useState(() => addDays(10));
   const [budget, setBudget] = useState(40000);
   const [group, setGroup] = useState<GroupType>("solo");
   const [travellers, setTravellers] = useState<Traveller[]>(DEFAULT_TRAVELLERS.solo);
@@ -230,7 +234,7 @@ export default function PlanTab({ initialDestination }: { initialDestination: st
             <div className="max-h-48 space-y-2 overflow-y-auto rounded-[1.4rem] bg-white p-3 shadow-float ring-1 ring-stone-200/70">
               {aiMessages.map((m, i) => (
                 <div key={i} className={cx("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                  <div className={cx("max-w-[88%] whitespace-pre-line rounded-2xl px-3.5 py-2 text-[15px] leading-snug", m.role === "user" ? "rounded-br-md bg-rani-600 text-white" : "rounded-bl-md bg-stone-100 text-stone-800")}>{m.content}</div>
+                  <div className={cx("max-w-[88%] whitespace-pre-line rounded-2xl px-3.5 py-2 text-[15px] leading-snug", m.role === "user" ? "rounded-br-md bg-rani-600 text-white" : "rounded-bl-md bg-stone-100 text-stone-800")}>{m.role === "user" ? m.content : <ChatMarkdown text={m.content} />}</div>
                 </div>
               ))}
               {aiBusy && <Spinner label="Planning..." />}

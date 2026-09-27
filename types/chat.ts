@@ -45,6 +45,7 @@ export interface ChatSession {
   userId: Id;
   title: string;
   tag: ChatSessionTag;
+  boundTripId?: string;
   /** Set once a "plan"-tagged session successfully produces a trip - the
    * conversation becomes read-only from that point on. Absent for "normal"
    * sessions and for "plan" sessions still mid-intake. */

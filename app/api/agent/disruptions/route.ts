@@ -43,7 +43,8 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const user = await requireUser(req);
   if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-  const trip = await resolveCurrentTrip(user._id.toString());
+  const explicit = req.nextUrl.searchParams.get("trip");
+  const trip = explicit && explicit !== "current" ? await tripFor(req, user._id.toString(), explicit) : await resolveCurrentTrip(user._id.toString());
   if (!trip) return NextResponse.json({ changes: [] });
   const events = await ChangeEventModel.find({ tripId: trip._id, status: "pending" }).sort({ createdAt: -1 }).lean();
   return NextResponse.json({

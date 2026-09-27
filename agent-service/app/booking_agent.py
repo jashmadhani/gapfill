@@ -301,4 +301,7 @@ async def chat(client: NextClient, history: list[dict], message: str) -> dict:
         engine = "rules (no GEMINI_API_KEY)"
     if found:
         reply = WARNING + "\n\n" + reply
-    return {"reply": reply, "toolCalls": [{"name": c["name"], "input": c["args"]} for c in calls], "engine": engine}
+    # toolCalls must be {name, args} - that's the wire contract lib/schemas/chat.ts's toolCallLogSchema checks;
+    # a mismatch here fails the whole response's Zod parse in Next, which then shows a generic "couldn't reach
+    # the assistant" fallback even though the action (e.g. a payment proposal) already happened server-side.
+    return {"reply": reply, "toolCalls": [{"name": c["name"], "args": c["args"]} for c in calls], "engine": engine}

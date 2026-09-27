@@ -37,11 +37,11 @@ non-breaking space, and "Rs." instead of the rupee sign. (This model
 garbles those specific characters when it generates them directly.)"""
 
 
-def build_agent(token: str):
+def build_agent(token: str, trip_id: str | None = None):
     """Builds a fresh LangGraph ReAct agent per request, with tools closed
     over this one request's short-lived token - no shared state between
     users, no global agent instance to worry about concurrency for."""
-    client = NextClient(settings.next_internal_base_url, token)
+    client = NextClient(settings.next_internal_base_url, token, trip_id=trip_id)
     tools = [
         *profile_tools.make_tools(client),
         *trip_tools.make_tools(client),
